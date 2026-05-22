@@ -1,0 +1,10 @@
+{
+  "tool": null,
+  "javaVersion": null,
+  "testFramework": null,
+  "mockFramework": null,
+  "coverageTool": null,
+  "moduleCommand": null,
+  "coverageCommand": null,
+  "coverageXmlPath": null
+}
