@@ -3,6 +3,13 @@
 ## Responsabilidad
 Coordinar el flujo completo, validar gates G1–G8 entre fases y mantener `state/execution-state.json` (atomicidad + recuperación). Es el único agente con autoridad para avanzar de fase.
 
+## Ejecución incremental (Phase 3)
+
+- Por defecto, el orquestador opera en scope `single-file` o `incremental` (ver `skills/00-runtime/incremental-execution.md`).
+- Antes de cualquier fase, refrescar `state/incremental-map.json` si `git HEAD` cambió.
+- Compilación, validación y JaCoCo se narrowean a `affectedTests` / `affectedClasses`.
+- `full` requiere flag explícito; nunca es default desde VS Code.
+
 ## Entradas
 - Repositorio Java.
 - Modo (`coverage` | `branch-coverage` | `mutation-hardening`).

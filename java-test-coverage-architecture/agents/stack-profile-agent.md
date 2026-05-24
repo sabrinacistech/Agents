@@ -1,5 +1,9 @@
 # Stack Profile Agent
 
+> **Phase 7 — Consolidación**: este agente sigue disponible para compat. Las nuevas
+> pipelines deben usar `agents/repository-intelligence-agent.md`, que cubre stack
+> profile + classification + dependency graph + symbol contracts + indexing.
+
 ## Responsabilidad
 Detectar versiones exactas de frameworks de test, mocking, asserts, DI y annotation processors. Es bloqueante: ningún test puede generarse sin `stack-profile.json` válido (gate G5).
 

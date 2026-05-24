@@ -1,5 +1,16 @@
 # Classification Agent
 
+> **Phase 7 — Consolidación**: este agente sigue disponible para compat. Las nuevas
+> pipelines deben usar `agents/repository-intelligence-agent.md`.
+
+> **Phase 1 — Semantic Index**: la clasificación se deriva determinísticamente de
+> `state/index/annotations.json` + `state/index/dependencies.json`. El LLM **no**
+> detecta frameworks por patrones textuales; consume el índice y, a lo sumo,
+> arbitra entre etiquetas ambiguas con evidencia citada.
+>
+> Ver: `skills/00-runtime/semantic-index.md` y `skills/00-runtime/deterministic-analysis-policy.md`.
+
+
 ## Responsabilidad
 Asignar tipo, etiquetas, riesgo y score por clase productiva. Excluye código generado y configs sin lógica.
 

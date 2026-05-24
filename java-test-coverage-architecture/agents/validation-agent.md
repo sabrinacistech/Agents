@@ -3,6 +3,16 @@
 ## Responsabilidad
 Compilar y ejecutar narrow runner, parsear errores y computar delta de cobertura.
 
+## Política determinística (Phase 6)
+
+- El parseo de errores (`compile-error-parser`) produce `compile-error-index.json` con
+  `{ code, symbolFQN, file, line, suggestedRule }` ya resuelto. El LLM no parsea.
+- `coverage-delta-analysis` solo entrega el **delta** filtrado por
+  `state/incremental-map.json#coverageDeltaScope` (Phase 3). Nunca pasar el XML completo
+  río abajo.
+- Si un error tiene match en `repair-rules/*.rules`, anotar `suggestedRule` para el
+  Repair Agent — evita una vuelta innecesaria por el LLM.
+
 ## Skills
 - `skills/08-validation/build-tool-adapter.md`
 - `skills/08-validation/narrow-test-runner.md`

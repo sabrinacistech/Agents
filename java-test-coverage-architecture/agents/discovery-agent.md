@@ -1,9 +1,18 @@
 # Discovery Agent
 
+> **Phase 7 — Consolidación**: este agente sigue disponible para compat. Las nuevas
+> pipelines deben usar `agents/repository-intelligence-agent.md`.
+
 ## Responsabilidad
 Producir la foto física y de build del repo. No clasifica, no opina sobre cobertura.
 
+## Semantic Index (Phase 1)
+- Lee `state/index/classes.json` y `state/index/imports.json` en vez de re-escanear `src/main/java`.
+- Si `state/index/` está vacío, delega al pre-stage Python; **no** parsea Java directamente.
+- Solo agrega contexto físico no estructural (módulos, profiles activos, layout).
+
 ## Skills
+- `skills/00-runtime/semantic-index.md` (Phase 1)
 - `skills/01-discovery/project-shape.md`
 - `skills/01-discovery/build-tooling.md`
 - `skills/01-discovery/coverage-tool-detection.md`

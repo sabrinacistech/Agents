@@ -101,3 +101,27 @@ Cortar el loop si:
 - Generar tests sin pasar por `test_linter.py` primero.
 - Ejecutar JaCoCo full-report tras cada test individual; consolidar por batch.
 - Reescribir contratos en cada ciclo en vez de cachear por SHA.
+
+## Optimization Roadmap — Phases 1-8
+
+Las optimizaciones anteriores son la base. El roadmap incremental añade:
+
+- **Phase 1 — Semantic Index** (`state/index/`): elimina el reparseo cruzado entre agentes. Ver `docs/semantic-index-architecture.md`.
+- **Phase 2 — Determinismo vs LLM**: política estricta sobre qué se computa y qué se prompea. Ver `skills/00-runtime/deterministic-analysis-policy.md`.
+- **Phase 3 — Ejecución incremental**: `state/incremental-map.json` propaga `changedFiles → affectedClasses → affectedTests`. Ver `skills/00-runtime/incremental-execution.md`.
+- **Phase 4 — Generación quirúrgica (AST patches)**: emitir parches mínimos, no archivos completos. Ver `skills/07-generation/ast-patch-generation.md`.
+- **Phase 5 — Plantillas determinísticas**: `templates/*.java` reducen alucinación. El LLM completa cuerpos/asserts, no esqueletos.
+- **Phase 6 — Repair determinístico**: `repair-rules/*.rules` resuelven antes de llamar al LLM.
+- **Phase 7 — Consolidación**: `agents/repository-intelligence-agent.md` absorbe discovery/classification/dep-graph/symbol-contract/stack-profile.
+- **Phase 8 — LSP**: reutilizar JDT.LS de VS Code en vez de re-resolver símbolos. Ver `skills/00-runtime/lsp-integration.md`.
+
+### KPIs adicionales esperados tras phases 1-8
+
+| Métrica                                | Tras 10 ítems anteriores | Tras Phases 1-8 |
+|----------------------------------------|--------------------------|-----------------|
+| Tokens por test (Service)              | 4k-8k                    | 1.5k-3k         |
+| Reparseos de `.java` por ciclo         | O(agentes × archivos)    | 0 (índice)      |
+| `mvn` por edición de un archivo (VS)   | full module              | `-Dtest=<one>`  |
+| Tamaño prompt repair (típico)          | 1.5k-3k                  | 0.3k-0.8k       |
+| Latencia generación de 1 test (warm)   | 30-90s                   | 5-15s           |
+

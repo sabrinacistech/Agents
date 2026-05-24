@@ -1,5 +1,16 @@
 # Dependency Graph Agent
 
+> **Phase 7 — Consolidación**: este agente sigue disponible para compat. Las nuevas
+> pipelines deben usar `agents/repository-intelligence-agent.md`.
+
+> **Phase 1 — Semantic Index**: el grafo se materializa como **vista filtrada** de
+> `state/index/dependencies.json`. Este agente **no** reconstruye el grafo desde
+> `.java`; agrupa, recorta por SUT y persiste `state/dependency-graph.json` para
+> consumo de Generation. Si el índice falta, abortar con `BLOCKED_INDEX_MISSING`.
+>
+> Ver: `skills/00-runtime/semantic-index.md`.
+
+
 ## Responsabilidad
 Mapear DI real, métodos de colaboradores efectivamente invocados, clientes externos, excepciones declaradas y, si aplica, estrategia Spring por SUT.
 

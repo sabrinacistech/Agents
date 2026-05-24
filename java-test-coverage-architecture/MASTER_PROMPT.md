@@ -10,6 +10,7 @@ Incrementar cobertura de tests unitarios en proyectos Java, priorizando clases d
 
 ## Reglas no negociables
 
+0. **Determinismo primero (Phase 2)**: cualquier operación listada en `skills/00-runtime/deterministic-analysis-policy.md` se ejecuta como código, nunca vía LLM. Imports, framework detection, dependencias, parseo de errores/stack traces, resolución de símbolos y clasificación NO son tareas del LLM.
 1. No generar código usando símbolos no verificados.
 2. No instanciar interfaces, clases abstractas o tipos generados sin estrategia confirmada.
 3. No inventar setters, getters, builders, factories, constructors ni imports.

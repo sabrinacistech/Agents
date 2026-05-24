@@ -32,3 +32,18 @@ El paralelismo se hace por SUT: nunca dos agentes sobre el mismo archivo de esta
 ## Recuperación
 
 `state/execution-state.json` mantiene `checkpoints[]` con hash por archivo. Tras un crash, el sistema vuelve al `lastGoodCheckpoint` y reanuda. Estados con hash inconsistente se degradan, no se aceptan.
+
+## Optimization Roadmap (Phases 1–8)
+
+Capas adicionales **aditivas** que coexisten con la arquitectura base:
+
+- **Phase 1 — Semantic Index** (`state/index/`): índice determinístico único compartido por todos los agentes. Ver `docs/semantic-index-architecture.md`.
+- **Phase 2 — Determinismo vs LLM** (`skills/00-runtime/deterministic-analysis-policy.md`): qué nunca llega al LLM.
+- **Phase 3 — Ejecución incremental** (`state/incremental-map.json`, `skills/00-runtime/incremental-execution.md`): scope `single-file` / `incremental` / `full`.
+- **Phase 4 — Generación quirúrgica** (`skills/07-generation/ast-patch-generation.md`): AST patches en vez de archivos completos.
+- **Phase 5 — Plantillas determinísticas** (`templates/`): el LLM solo completa cuerpos.
+- **Phase 6 — Repair determinístico** (`repair-rules/`): reglas antes que LLM.
+- **Phase 7 — Agente consolidado** (`agents/repository-intelligence-agent.md`): sucede a 5 agentes legacy con backward compat.
+- **Phase 8 — LSP integration** (`skills/00-runtime/lsp-integration.md`): reusar JDT.LS para reactividad VS Code.
+
+Las fases son **opt-in**: cada agente que las adopta documenta su adhesión en su archivo. Pipelines legacy siguen operando.
