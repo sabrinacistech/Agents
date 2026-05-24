@@ -1,56 +1,81 @@
-# Java Test Coverage Agent Architecture - Optimized
+# Java Test Coverage Agent Architecture
 
-Arquitectura optimizada de agentes y skills para generar cobertura de tests unitarios en microservicios Java, con foco en Java 8, Maven/Gradle, Mockito, JUnit, JaCoCo y proyectos con FreeBuilder.
-
-## Objetivo
-
-Generar, validar y reparar tests unitarios evitando alucinaciones del LLM. La arquitectura prioriza evidencia real del código antes de generar tests.
+Arquitectura de agentes y skills para generar tests unitarios en microservicios Java con **cero invención de paquetes/clases**, soportando Java 8+, Maven/Gradle, JUnit 4/5, Mockito, AssertJ, JaCoCo y proyectos con FreeBuilder/Lombok/MapStruct/Immutables/AutoValue.
 
 ## Principio central
 
-> El agente no debe inventar símbolos. Solo puede usar clases, imports, constructores, métodos, builders, fixtures y comandos previamente verificados.
+> El agente no inventa símbolos. Solo puede usar clases, imports, constructores, métodos, builders, fixtures y comandos verificados con `evidence-id`. Si no hay evidencia, no se genera el test.
 
-## Flujo principal
+## Flujo
 
 ```text
-discovery
-  -> classification
-  -> symbol-contract
-  -> dependency-graph
-  -> fixture-catalog
-  -> planning
-  -> generation
-  -> validation
-  -> repair
-  -> reporting
+discovery → stack-profile → classification → symbol-contract
+        → dependency-graph → fixtures → planning → generation
+        → validation → repair → reporting
 ```
 
 ## Estructura
 
 ```text
-agents/              Agentes orquestadores por fase
-skills/              Capacidades reutilizables por dominio
-state/               Contratos JSON persistentes entre fases
-docs/                Documentación de uso y decisiones de arquitectura
-MASTER_PROMPT.md     Prompt principal para ejecutar la arquitectura
+agents/              Agentes por fase (incluye stack-profile-agent y mutation-agent)
+skills/              Procedimientos accionables por dominio
+state/               Estados JSON persistentes
+state/_schemas/      JSON Schemas Draft-07 (validación obligatoria)
+docs/                Notas de arquitectura y políticas
+tools/python/        Pre-stage determinista (parsea POM/classpath/javap/JaCoCo)
+MASTER_PROMPT.md     Prompt principal con gates G1–G8
 ```
 
-## Optimizaciones incluidas
+## Pre-stage Python (obligatorio)
 
-1. Symbol Contract Agent para evitar imports, setters, constructors y builders inventados.
-2. Dependency Graph Agent para construir mocks y dependencias reales.
-3. Fixture Agent para centralizar datos de prueba válidos.
-4. Build Tool Adapter para comandos Maven/Gradle verificables.
-5. Compile Error Parser para reparación determinística.
-6. FreeBuilder strategy reforzado.
-7. JaCoCo XML como fuente de planificación de cobertura.
-8. Runtime simplificado para reducir ruido contextual.
-9. Mutation testing como modo opcional posterior, no como fase obligatoria.
+Antes de cualquier ciclo LLM, correr el pipeline determinista que produce todos los `state/*.json`. Esto **reduce drásticamente los tokens** consumidos y acelera la generación (ver [`docs/performance-tuning.md`](docs/performance-tuning.md) y [`docs/python-pipeline.md`](docs/python-pipeline.md)).
 
-## Modos sugeridos
-
-```text
-mode: coverage              Subir cobertura de líneas.
-mode: branch-coverage       Subir cobertura de ramas y paths alternativos.
-mode: mutation-hardening    Endurecer tests críticos con mutation testing.
+```bash
+mvn -q -DskipTests package
+python tools/python/run_pipeline.py \
+   --repo . \
+   --out docs/agents/java-test-coverage-architecture/state \
+   --module <module> \
+   --include-fqcn '^com\.acme\.' \
+   --jacoco-xml target/site/jacoco/jacoco.xml
 ```
+
+## BGBA archetypes
+
+Detección automática de `bgba-parent-pom`, `bgba-parent-paas-java-8` y `bgba-parent-paas-java-21` con reglas derivadas (`javax` vs `jakarta`, JaCoCo heredado vs manual, JUnit 4 vs 5). Ver [`docs/archetype-policy.md`](docs/archetype-policy.md) y la skill [`archetype-detection`](skills/01-discovery/archetype-detection.md).
+
+## Código autogenerado
+
+CXF (`wsdl2java`), OpenAPI Generator, Lombok, FreeBuilder, MapStruct, Immutables y AutoValue se detectan y excluyen del universo de SUT vía [`generated-code-exclusion`](skills/01-discovery/generated-code-exclusion.md) → `state/generated-code-index.json`.
+
+## Gates anti-alucinación
+
+| Gate | Qué bloquea |
+|------|-------------|
+| G1 | Imports fuera de `import-whitelist.json` |
+| G2 | Símbolo sin `evidence-id` en contrato |
+| G3 | Contratos derivados de regex (forzar bytecode/AST) |
+| G4 | Generated sources no indexados con APs declarados |
+| G5 | Generation sin `stack-profile.json` válido |
+| G6 | Linter AST pre-compile sobre el test |
+| G7 | Re-aplicación de fix ya fallido |
+| G8 | Convergencia (delta=0 o compile-fail-rate alto) |
+
+## Modos
+
+- `coverage` — maximiza líneas.
+- `branch-coverage` — maximiza ramas y caminos.
+- `mutation-hardening` — endurece tests con PIT sobre mutantes sobrevivientes.
+
+## Validación de estados
+
+Todos los `state/*.json` validan contra schemas en `state/_schemas/`. Escritura atómica (`*.tmp` + rename) y hashes SHA-256 en `state/execution-state.json`.
+
+## Cómo arrancar
+
+1. Leer la [Guía del Desarrollador](docs/developer-guide.md).
+2. Leer `MASTER_PROMPT.md`.
+3. Correr el pre-stage Python (`tools/python/run_pipeline.py`).
+4. Ejecutar Orchestrator con `mode` y `budget` pegando `Prompt_inicial.md` en el chat.
+5. Inspeccionar `state/execution-state.json` y los `state/_summaries/cycle-*.json` para progreso.
+6. Reporte final emitido por `reporting-agent`.

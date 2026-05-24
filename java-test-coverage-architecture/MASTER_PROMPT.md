@@ -18,71 +18,135 @@ Incrementar cobertura de tests unitarios en proyectos Java, priorizando clases d
 6. No agregar tests que no compilen.
 7. No ocultar errores de compilación o cobertura.
 8. No afirmar cobertura si no existe evidencia de JaCoCo, build output o reporte equivalente.
+9. Toda línea de un test generado (`import`, `new X(...)`, `X.staticMethod(...)`, `obj.method(...)`, anotaciones) debe poder citarse contra un `evidence-id` registrado.
+10. Si un símbolo no se encuentra, registrar `status: UNKNOWN` con la búsqueda realizada. Nunca asumir.
 
 ## Estados obligatorios
 
-Antes de generar tests deben existir o actualizarse estos contratos:
+Antes de generar tests deben existir o actualizarse estos contratos. Cada uno debe validar contra su JSON Schema en `state/_schemas/`.
 
 ```text
 state/build-tool-contract.json
+state/stack-profile.json
 state/classification-index.json
-state/symbol-contracts.json
+state/import-whitelist.json
+state/symbol-contracts/<fqcn>.json     # uno por SUT, no archivo único global
 state/dependency-graph.json
 state/fixture-catalog.json
 state/coverage-targets.json
 state/batch-plan.json
+state/execution-state.json
+state/failure-memory.json
 ```
+
+Adicionalmente, generados por el pre-stage Python (ver `docs/python-pipeline.md`):
+
+```text
+state/archetype-profile.json            # BGBA parent + reglas derivadas
+state/generated-code-index.json         # CXF, OpenAPI, APs y FQCNs excluidos
+state/compile-error-index.json          # parseo de fallas de Maven
+```
+
+Escritura atómica: escribir `*.tmp` y luego `rename`. `execution-state.json` referencia los hashes SHA-256 vigentes de cada estado.
+
+## Phase 0 - Python pre-stage (obligatorio)
+
+Antes de cualquier agente LLM debe correr el pipeline Python una vez por commit relevante (POM o `target/classes` cambiado):
+
+```bash
+mvn -q -DskipTests package
+python tools/python/run_pipeline.py \
+   --repo . \
+   --out docs/agents/java-test-coverage-architecture/state \
+   --module <module> \
+   --include-fqcn '^com\.acme\.' \
+   --jacoco-xml target/site/jacoco/jacoco.xml
+```
+
+Produce `build-tool-contract.json`, `archetype-profile.json`, `generated-code-index.json`, `import-whitelist.json`, `symbol-contracts/<fqcn>.json` y, si hay JaCoCo, `coverage-targets.json`. Los agentes leen solo estos JSON; no relectura de POM, classpath ni javap. Si falta cualquier archivo ⇒ `BLOCKED_PRE_STAGE_MISSING`.
+
+## Precedencia de evidencia (orden estricto)
+
+1. Bytecode vía `javap -p -s -c target/classes/<...>.class` o jar del classpath.
+2. AST con JavaParser (+ SymbolSolver) sobre `src/main/java` y `target/generated-sources`.
+3. (Opcional) Language server `jdt.ls` para overloads/genéricos ambiguos.
+
+Prohibido derivar contratos de regex sobre `.java`. Prohibido derivar contratos de nombres de archivo.
 
 ## Flujo de ejecución
 
 ### 1. Discovery
+Lectura de `state/build-tool-contract.json`, `state/archetype-profile.json` y `state/generated-code-index.json` ya producidos por el pre-stage Python. El agente Discovery solo agrega contexto cualitativo (tests existentes, convenciones detectadas). Si los JSON no existen, abortar con `BLOCKED_PRE_STAGE_MISSING`.
 
-Identificar estructura del proyecto, módulos, herramienta de build, versión Java, framework de test, dependencias y reportes de cobertura existentes.
+**Archetype-aware (BGBA)**: ver `docs/archetype-policy.md` y `skills/01-discovery/archetype-detection.md`.
+- `bgba-parent-paas-java-21` ⇒ namespace `jakarta`, JaCoCo heredado (no agregar plugin), JUnit 5.
+- `bgba-parent-paas-java-8` ⇒ namespace `javax`, JaCoCo CLI bootstrap (sin tocar POM).
+- `bgba-parent-pom` ⇒ reglas comunes.
 
-### 2. Classification
+**Generated code**: clases bajo `target/generated-sources/**`, paquetes declarados en `cxf-codegen-plugin` (WSDL) o `openapi-generator-maven-plugin` (`apiPackage`/`modelPackage`) **no** son SUT. Se usan solo como tipos auxiliares previa validación contra `generated-code-index.json`. Ver `skills/01-discovery/generated-code-exclusion.md`.
 
-Clasificar clases según testabilidad, riesgo, criticidad, tipo de componente y potencial de cobertura.
+**JaCoCo bootstrap**: ver `skills/01-discovery/jacoco-bootstrap.md`. Nunca modificar POM salvo autorización explícita.
 
-### 3. Symbol Contract
+### 2. Stack Profile
+Detectar versiones exactas y dirigir presets: JUnit 4/5, Mockito 2/3/4/5, AssertJ, Hamcrest, Spring/Spring Boot Test, Testcontainers, Lombok, FreeBuilder, MapStruct, Immutables, AutoValue.
 
-Construir contratos de símbolos por clase. Este contrato es la fuente autorizada para generación de tests.
+### 3. Classification
+Clasificar clases según testabilidad, riesgo, criticidad, tipo, potencial de cobertura.
 
-### 4. Dependency Graph
+### 4. Symbol Contract
+Generar un contrato por SUT en `state/symbol-contracts/<fqcn>.json` con `evidence-id` por símbolo. Construir además `state/import-whitelist.json` con todos los paquetes/clases admisibles (classpath + JDK + source roots + generated sources).
 
-Mapear dependencias reales, colaboradores, repositorios, clientes externos, mappers, puertos, adapters y excepciones.
+### 5. Dependency Graph
+Mapear DI real (constructor/field/setter), colaboradores, repositorios, clientes, mappers, puertos, adapters y **excepciones declaradas por método** (para tests negativos).
 
-### 5. Fixture Catalog
+### 6. Fixture Catalog
+Builders/constructors/factories verificados. Indicar `required`, `optional`, `defaults`, `cycleSafe`. Mock pasivo solo como fallback.
 
-Definir factories y builders válidos para datos de prueba reutilizables.
+### 7. Planning
+Leer `target/site/jacoco/jacoco.xml` (LINE/BRANCH/INSTRUCTION/CXTY/METHOD), cruzar con clasificación. Ramificar por modo: `coverage` prioriza líneas, `branch-coverage` prioriza ramas, `mutation-hardening` prioriza clases con sobrevivientes PIT.
 
-### 6. Planning
+### 8. Generation
+Generar tests usando solo contratos. Cada test embebe en comentario los `evidence-id` consumidos.
 
-Seleccionar objetivos de cobertura a partir de JaCoCo XML, huecos por método, ramas no cubiertas y riesgo de compilación.
+### 9. Validation
+- Linter AST sobre el test propuesto (gate G6) antes de compilar.
+- Narrow runner: `mvn -pl <módulo> -am -Dtest=<FQCN> -DfailIfNoTests=false -Djacoco.destFile=target/jacoco-batch-<n>.exec test`.
+- Parseo de errores estructurado a `state/compile-error-index.json`.
 
-### 7. Generation
+### 10. Repair
+Solo con causa raíz parseada. Bloqueado por `failure-memory.json` si el `hash(errorCode, symbolFQN, fixId)` ya falló.
 
-Generar tests unitarios usando únicamente contratos verificados.
+### 11. Reporting
+Cobertura antes/después leída de **dos** ejecuciones JaCoCo (baseline + final), commit hash, lista de `evidence-id` consumidos, tests descartados con motivo, XML JaCoCo adjunto.
 
-### 8. Validation
+## Gates bloqueantes (anti-alucinación)
 
-Ejecutar test narrow scope y luego cobertura. Parsear errores de compilación, test failures y delta de cobertura.
+Ningún ciclo puede avanzar si un gate falla.
 
-### 9. Repair
+- **G1 Import whitelist**: import fuera de `state/import-whitelist.json` ⇒ test descartado.
+- **G2 Symbol evidence**: cada `new`, llamada estática y llamada de instancia debe mapear a un `evidence-id` del contrato del SUT o colaborador.
+- **G3 Bytecode-first**: si `target/classes` existe, los contratos se derivan de bytecode; AST solo como fallback documentado.
+- **G4 Generated sources**: si hay annotation processors detectados, `target/generated-sources` debe existir y estar indexado antes de Symbol Contract.
+- **G5 Stack profile**: generación bloqueada hasta que `state/stack-profile.json` declare framework de test, mocking, assertion lib y DI con versiones.
+- **G6 Linter pre-compile**: AST del test propuesto valida 100% de símbolos contra whitelist/contratos. Falla ⇒ descarte sin gastar build.
+- **G7 Failure memory**: `hash(errorCode, symbolFQN, fixId)` previamente fallido ⇒ fix prohibido.
+- **G8 Convergencia**: 2 ciclos consecutivos con `coverageDelta == 0` o `compileFailRate > 0.5` ⇒ abortar y reportar.
 
-Reparar solo si la causa raíz es clara. No aplicar retries ciegos.
+## Política de builders (generalizada)
 
-### 10. Reporting
+Política parametrizada por annotation processor detectado en `stack-profile.json`:
 
-Emitir reporte con evidencia: clases modificadas, tests agregados, cobertura antes/después, errores pendientes y recomendaciones.
+- **FreeBuilder**: ver `docs/freebuilder-policy.md`. Nunca `new Interface()`. Solo `Interface.Builder` si está declarado. Mock pasivo si no.
+- **Lombok `@Builder`/`@Data`**: permitido solo si Lombok está en el POM. Builder = `Type.builder().<fields>().build()` con campos verificados.
+- **Immutables / AutoValue**: usar la clase generada (`ImmutableX`, `AutoValue_X`) solo si existe en `target/generated-sources`.
+- **MapStruct**: usar `Mappers.getMapper(XMapper.class)` solo si la implementación generada existe.
+- Sin annotation processor detectado: prohibido cualquier builder generado.
 
-## Política FreeBuilder
+## Modos
 
-- Si el tipo es interface con `@FreeBuilder`, nunca usar `new Interface()`.
-- Usar `new Interface.Builder()` solo si la clase `Builder` está declarada en el source.
-- No importar `Interface_Builder` salvo que exista y sea accesible.
-- No inventar setters.
-- Si no se confirma builder, usar Mockito mock para contratos pasivos.
-- Si el objeto es parte central del comportamiento a validar, priorizar builder verificado.
+- `coverage`: maximiza líneas; planning ordena por `missedLines DESC, risk ASC`.
+- `branch-coverage`: maximiza ramas; planning ordena por `missedBranches DESC`; generation prioriza fixtures con valores límite y nulls.
+- `mutation-hardening`: requiere `state/mutation-intelligence.json` (PIT). Planning toma mutantes sobrevivientes; generation añade asserts dirigidos.
 
 ## Salida esperada por ciclo
 
@@ -90,15 +154,34 @@ Emitir reporte con evidencia: clases modificadas, tests agregados, cobertura ant
 {
   "cycle": 1,
   "mode": "coverage",
+  "stackProfileHash": "sha256:...",
   "targets": [],
-  "generatedTests": [],
+  "generatedTests": [
+    {
+      "testClass": "com.acme.FooServiceTest",
+      "sut": "com.acme.FooService",
+      "evidenceIds": ["sym:com.acme.FooService#bar(java.lang.String):e7a1"]
+    }
+  ],
+  "discardedTests": [
+    { "reason": "G1_IMPORT_NOT_WHITELISTED", "import": "com.fake.X" }
+  ],
   "validation": {
     "compileStatus": "PASS|FAIL",
     "testStatus": "PASS|FAIL",
-    "coverageDelta": {}
+    "coverageDelta": { "lines": 0, "branches": 0 }
   },
   "repairs": [],
   "risks": [],
   "nextActions": []
 }
 ```
+
+## Convergencia y parada
+
+El orchestrator mantiene `state/execution-state.json` con:
+- `cycle`, `phase`, `mode`, `budget`, `lastGoodCheckpoint`
+- `consecutiveZeroDeltaCycles`
+- `compileFailRateWindow`
+
+Parada si G8 se activa o si `budget` se agota.

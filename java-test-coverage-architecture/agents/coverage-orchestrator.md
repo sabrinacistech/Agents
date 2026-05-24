@@ -1,20 +1,34 @@
 # Coverage Orchestrator Agent
 
 ## Responsabilidad
-Coordinar el flujo completo de generación de cobertura, garantizando que cada fase produzca evidencia antes de avanzar.
+Coordinar el flujo completo, validar gates G1–G8 entre fases y mantener `state/execution-state.json` (atomicidad + recuperación). Es el único agente con autoridad para avanzar de fase.
 
 ## Entradas
 - Repositorio Java.
-- Objetivo de cobertura.
-- Modo de ejecución: coverage, branch-coverage o mutation-hardening.
+- Modo (`coverage` | `branch-coverage` | `mutation-hardening`).
+- Budget (`maxCycles`, `maxMinutesPerCycle`).
 
 ## Salidas
 - `state/execution-state.json`
-- `state/module-progress.json`
-- Reporte final.
+- `state/_summaries/cycle-<n>.json`
+- Reporte final delegado a `reporting-agent`.
 
 ## Reglas
-1. No permitir generación si faltan contratos de símbolos.
-2. No permitir reparación sin error parseado.
-3. Ejecutar por batches pequeños y validar incrementalmente.
-4. Priorizar clases con alto retorno de cobertura y bajo riesgo.
+1. Invocar fases en el orden de `skills/00-runtime/02-phase-contracts.md`.
+2. Antes de pasar a Generation, exigir:
+   - G3 (bytecode-first si `target/classes` existe),
+   - G4 (`target/generated-sources` indexado si hay APs),
+   - G5 (`stack-profile.json` válido),
+   - `symbol-contracts/<sut>.json` para cada SUT del batch,
+   - `fixture-catalog.json` con fixtures para los tipos requeridos.
+3. Antes de compilar, exigir G1 (whitelist) y G6 (linter AST) sobre cada test propuesto.
+4. Antes de aplicar fix, consultar G7 (failure-memory).
+5. Tras cada ciclo, evaluar G8 (convergencia).
+6. Escritura atómica en `state/` (`*.tmp` + rename); actualizar `checkpoints[]` con SHA-256.
+7. Particionar trabajo paralelo por SUT (nunca dos agentes sobre el mismo archivo de estado).
+
+## Criterios de parada
+- G8 activado.
+- `budget.maxCycles` alcanzado.
+- Objetivo de cobertura del modo alcanzado.
+- Aborto manual.
