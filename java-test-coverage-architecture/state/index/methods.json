@@ -1,0 +1,7 @@
+{
+  "$schemaRef": "state/_schemas/index/methods.schema.json",
+  "version": 1,
+  "generatedAt": null,
+  "repoFingerprint": null,
+  "methods": []
+}

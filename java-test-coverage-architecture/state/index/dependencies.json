@@ -1,0 +1,8 @@
+{
+  "$schemaRef": "state/_schemas/index/dependencies.schema.json",
+  "version": 1,
+  "generatedAt": null,
+  "repoFingerprint": null,
+  "nodes": [],
+  "edges": []
+}
