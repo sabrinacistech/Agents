@@ -1,7 +1,7 @@
 {
-  "$schemaRef": "state/_schemas/index/methods.schema.json",
   "version": 1,
-  "generatedAt": null,
-  "repoFingerprint": null,
-  "methods": []
+  "generatedAt": "2026-05-25T20:57:04.422802+00:00",
+  "count": 0,
+  "methods": {},
+  "_fingerprints": {}
 }

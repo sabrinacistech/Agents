@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-from common import atomic_write_json, find_tool, run, validate
+from common import atomic_write_json, find_tool, load_json, run, validate
 
 DESC_RE = re.compile(r"descriptor:\s*(\S+)")
 ACCESS_RE = re.compile(
@@ -191,6 +191,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     n = 0
+    written: list[dict] = []
     for cf in classes_dir.rglob("*.class"):
         # Skip nested/synthetic
         if "$" in cf.name:
@@ -205,8 +206,40 @@ def main() -> int:
         except Exception as e:
             print(f"[WARN] schema failed for {contract['fqcn']}: {e}", file=sys.stderr)
         atomic_write_json(out_dir / f"{contract['fqcn']}.json", contract)
+        written.append({
+            "fqcn": contract["fqcn"],
+            "kind": contract.get("kind", "class"),
+            "file": f"{contract['fqcn']}.json",
+            "instantiation": contract.get("instantiation", {}).get("strategy", "unknown"),
+        })
         n += 1
+
+    # Write/update the manifest (state/symbol-contracts.json) so it reflects
+    # the per-FQCN files just written. Agents load individual files by FQCN;
+    # the manifest is an index for quick lookup and freshness checks.
+    from datetime import datetime, timezone
+    manifest_path = state_dir / "symbol-contracts.json"
+    # Merge with any existing entries from other modules
+    existing_manifest: list[dict] = []
+    if manifest_path.exists():
+        try:
+            existing_manifest = load_json(manifest_path).get("contracts", [])
+            # Remove entries for FQCNs we just re-scanned (they'll be re-added)
+            scanned_fqcns = {e["fqcn"] for e in written}
+            existing_manifest = [e for e in existing_manifest if e["fqcn"] not in scanned_fqcns]
+        except Exception:
+            existing_manifest = []
+    all_entries = existing_manifest + written
+    atomic_write_json(manifest_path, {
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "note": "Manifest index of per-FQCN contracts in symbol-contracts/. "
+                "Agents load individual files by FQCN, not this manifest.",
+        "count": len(all_entries),
+        "contracts": sorted(all_entries, key=lambda e: e["fqcn"]),
+    })
     print(f"[OK] {n} contracts -> {out_dir}")
+    print(f"[OK] manifest -> {manifest_path} ({len(all_entries)} total entries)")
     return 0
 
 

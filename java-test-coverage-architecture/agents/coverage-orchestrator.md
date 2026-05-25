@@ -34,6 +34,28 @@ Coordinar el flujo completo, validar gates G1–G8 entre fases y mantener `state
 6. Escritura atómica en `state/` (`*.tmp` + rename); actualizar `checkpoints[]` con SHA-256.
 7. Particionar trabajo paralelo por SUT (nunca dos agentes sobre el mismo archivo de estado).
 
+## Compresión de historial de ciclos (Phase 5)
+
+Al **finalizar cada ciclo** (después de Reporting), invocar:
+
+```bash
+python tools/python/cycle_summarizer.py --state state/ --cycle <N> --mode <mode>
+```
+
+Esto escribe `state/_summaries/cycle-<N>.json` con un resumen compacto.
+
+**Regla de contexto**: en ciclos posteriores, el Orchestrator carga únicamente:
+- Los últimos **2** summaries (`cycle-N.json`, `cycle-(N-1).json`).
+- El estado completo del ciclo **actual** solamente.
+- **Nunca** los archivos crudos de ciclos anteriores (generated-tests.json, compile-error-index.json, coverage-delta.json de ciclos pasados).
+
+Esto mantiene el presupuesto de contexto O(1) independiente del número de ciclos.
+
+## Rollback via patches (Phase 4)
+
+Patches en `state/_patches/` son escritos por `tools/python/ast_patcher.py` antes de
+modificar cada test. Si la validación falla: `ast_patcher.py --rollback <diff>`.
+
 ## Criterios de parada
 - G8 activado.
 - `budget.maxCycles` alcanzado.

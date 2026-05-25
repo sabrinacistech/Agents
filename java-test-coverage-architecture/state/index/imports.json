@@ -1,7 +1,10 @@
 {
-  "$schemaRef": "state/_schemas/index/imports.schema.json",
   "version": 1,
-  "generatedAt": null,
-  "repoFingerprint": null,
-  "byFile": {}
+  "generatedAt": "2026-05-25T20:57:04.436255+00:00",
+  "module": null,
+  "packageCount": 0,
+  "classCount": 0,
+  "packages": [],
+  "classes": [],
+  "_fingerprints": {}
 }

@@ -1,8 +1,9 @@
 {
-  "$schemaRef": "state/_schemas/index/dependencies.schema.json",
   "version": 1,
-  "generatedAt": null,
-  "repoFingerprint": null,
-  "nodes": [],
-  "edges": []
+  "generatedAt": "2026-05-25T20:57:04.452871+00:00",
+  "count": 0,
+  "classes": {},
+  "_fingerprints": {
+    "dependency-graph.json": "491692511ad9a3a5c4d7cf31b7a7123c03f16ea7e8387001fe60f8646fd5bdaf"
+  }
 }
