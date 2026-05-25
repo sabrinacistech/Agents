@@ -20,3 +20,9 @@
 # Common API confusion
 "method setX in class .* cannot be applied"             => escalateToLLM("builder-setter-shape")
 "clear is not abstract and does not override"           => escalateToLLM("builder-clear-overload")
+
+# VS Code / Eclipse JDT diagnostics
+"Cannot instantiate the type (.*)"                    => applyInstantiationStrategy($1)
+"The constructor (.*) is undefined"                   => applyInstantiationStrategy($1)
+"The method (.*) is undefined for the type (.*)"      => replaceWithContractMethod($2,$1)
+"new ([A-Za-z0-9_]+_Builder)"                         => replaceWithDeclaredBuilderOrBlock($1)

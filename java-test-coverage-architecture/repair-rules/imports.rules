@@ -43,3 +43,9 @@
 
 # Ambiguous imports → escalate (cannot pick deterministically)
 "reference to .* is ambiguous"                    => escalateToLLM("ambiguous-symbol")
+
+# VS Code / Eclipse JDT diagnostics
+"The import (.*) cannot be resolved"                 => removeImport($1)
+"(.*) cannot be resolved to a type"                   => resolveUniqueImportFromWhitelist($1)
+"The type (.*) is not visible"                        => removeUsageAndEscalate("non-public-type")
+"The method .* refers to the missing type .*"         => escalateToLLM("missing-type-in-classpath")

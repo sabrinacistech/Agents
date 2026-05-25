@@ -1,58 +1,35 @@
-# Unit Test Generation (Surgical Mode)
+# Unit Test Generation
 
-> Conventions for the **body** the LLM places inside `InsertMethod` /
-> `ReplaceAssertion` ops. Output is always an AST patch
-> (`schemas/ast-patch.schema.json`); never a whole file (except `createsFile: true`,
-> which uses a `templates/` skeleton).
+## Objetivo
+Emitir tests JUnit que compilen y citen evidencia. Cero invención de símbolos.
 
-## Preconditions
-- `state/stack-profile.json` valid (G5).
-- `state/import-whitelist.json` current (G1).
-- Projected contract `state/symbol-contracts/_views/<batchId>.json` available (G2).
-- Required fixtures present in `state/fixture-catalog.json`.
+## Precondiciones
+- `state/stack-profile.json` válido (gate G5).
+- `state/import-whitelist.json` actualizado (gate G1).
+- `state/symbol-contracts/<sut>.json` y contratos de colaboradores presentes (gate G2).
+- `state/fixture-catalog.json` poblado para los tipos requeridos.
 
-## Body conventions (inside `InsertMethod.source`)
+## Procedimiento
+1. Tomar objetivo de `state/batch-plan.json`: `{sut, method, branchId?, mutationId?}`.
+2. Resolver firma del método desde el contrato y colaboradores desde `dependency-graph.json`.
+3. Seleccionar fixtures de `fixture-catalog.json`. Si falta fixture obligatorio ⇒ abortar el objetivo (no improvisar).
+4. Construir test con plantilla AAA:
+   - **Arrange**: declarar mocks (`@Mock`), fixtures (`Type.builder()...build()`), inyección (`@InjectMocks` o constructor explícito según `dependency-graph.json`).
+   - **Act**: una sola invocación al método objetivo.
+   - **Assert**: usar lib del `stack-profile` (`AssertJ` si presente, `JUnit assertions` si no). Incluir asserts de retorno y verificación de interacciones relevantes.
+5. Emitir el archivo en la misma estructura de paquete bajo `src/test/java`.
+6. Anexar bloque de cita al final del método de test:
+   ```java
+   // evidence-ids:
+   //   sym:com.acme.FooService#calc(java.math.BigDecimal):e7a1
+   //   ctor:com.acme.FooService(com.acme.Repo):2b3d
+   //   builder:com.acme.Order:lombok:a91c
+   ```
 
-Use AAA shape. Keep it under ~25 lines.
-
-```java
-@Test
-void shouldReturnEmpty_whenIdMissing() {
-    // Arrange  — fixtures resolved by the patcher via fixture ids
-    when(barRepo.findById(1L)).thenReturn(Optional.empty());
-
-    // Act
-    Optional<Bar> result = sut.findById(1L);
-
-    // Assert
-    assertThat(result).isEmpty();
-    verify(barRepo).findById(1L);
-
-    // evidence-ids:
-    //   sym:com.acme.FooService#findById(Long):e7a1
-    //   sym:com.acme.BarRepository#findById(Long):a3c2
-}
-```
-
-## Rules
-- One scenario per `InsertMethod` op (happy / branch / exception).
-- Naming: `should<Behavior>_when<Condition>` or `methodName_condition_expected`.
-- One Act invocation per test.
-- Assertion library follows `stack-profile` (AssertJ if present, JUnit otherwise).
-- Stubs only for methods the SUT actually invokes (cross-check `state/dependency-graph.json`).
-- Forbidden: `Thread.sleep`, `System.out`, non-fixed dates, unseeded randomness, wildcard imports, `@Ignore` / `@Disabled`.
-- `evidence-id` block is mandatory at the end of each method body.
-
-## Cite, don't import
-
-`AddImport` ops are emitted by the deterministic patcher, not by the LLM.
-The LLM body uses simple names that **must** map to symbols in the projected
-contract / whitelist. Anything outside that surface is rejected by G1/G6
-before write.
-
-## Anti-patterns
-- Returning whole class bodies inside `InsertMethod.source`.
-- Generating multiple `@Test` methods in a single op.
-- Inventing collaborators not present in the projected dep-graph.
-- Stubbing collaborators that aren't actually invoked.
-- Omitting the evidence-id block.
+## Reglas
+- Un test por escenario (happy / branch / exception).
+- Nombrado: `should<Behavior>_when<Condition>` o `methodName_condition_expected`.
+- Prohibido `Thread.sleep`, `System.out`, fechas no fijas, aleatorios sin seed.
+- Prohibido `@Ignore`/`@Disabled` salvo decisión registrada en `state/batch-plan.json`.
+- Sin imports wildcard salvo los del preset emitido por stack-profile.
+- Stubs solo para métodos que el SUT realmente invoca según `dependency-graph.json`.

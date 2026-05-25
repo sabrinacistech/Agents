@@ -6,8 +6,9 @@ Runs:
   3. generated_code_scanner  -> state/generated-code-index.json
   4. classpath_resolver      -> state/import-whitelist.json
   5. bytecode_scanner        -> state/symbol-contracts/<fqcn>.json   (per module if --include given)
-  6. jacoco_parser (targets) -> state/coverage-targets.json          (if jacoco.xml exists)
-  7. state_validator         -> validates everything
+  6. source_symbol_enricher  -> enrich contracts with FreeBuilder/source-only semantics
+  7. jacoco_parser (targets) -> state/coverage-targets.json          (if jacoco.xml exists)
+  8. state_validator         -> validates everything
 
 After this, the LLM only consumes state/*.json. Token consumption drops because
 no agent re-parses POMs, classpath, javap output or jacoco XML.
@@ -35,7 +36,7 @@ def main() -> int:
     ap.add_argument("--include-fqcn", default=".*", help="regex filter for bytecode scan")
     ap.add_argument("--jacoco-xml", default=None, help="path to jacoco.xml (optional)")
     ap.add_argument("--coverage-mode", default="coverage", choices=["coverage", "branch-coverage", "mutation-hardening"])
-    ap.add_argument("--skip", nargs="*", default=[], help="step names to skip (pom, archetype, generated, classpath, bytecode, jacoco, validate)")
+    ap.add_argument("--skip", nargs="*", default=[], help="step names to skip (pom, archetype, generated, classpath, bytecode, source, jacoco, validate)")
     args = ap.parse_args()
 
     rc = 0
@@ -55,6 +56,11 @@ def main() -> int:
             [HERE / "bytecode_scanner.py", "--repo", args.repo, "--out", args.out,
              "--module", args.module, "--include", args.include_fqcn]
         )
+    if "source" not in args.skip:
+        source_args = [HERE / "source_symbol_enricher.py", "--repo", args.repo, "--out", args.out]
+        if args.module:
+            source_args += ["--module", args.module]
+        rc |= run_step(source_args)
     if "jacoco" not in args.skip and args.jacoco_xml:
         rc |= run_step(
             [HERE / "jacoco_parser.py", "--mode", "targets", "--xml", args.jacoco_xml,

@@ -1,57 +1,34 @@
-# Java Test Coverage Agent Architecture (Lean Edition)
+# Java Test Coverage Agent Architecture
 
-Multi-agent system that increases real unit-test coverage on Java microservices
-from inside VS Code + GitHub Copilot. **Deterministic-first**, **incremental-first**,
-**surgical-first**.
+Arquitectura de agentes y skills para generar tests unitarios en microservicios Java con **cero invención de paquetes/clases**, soportando Java 8+, Maven/Gradle, JUnit 4/5, Mockito, AssertJ, JaCoCo y proyectos con FreeBuilder/Lombok/MapStruct/Immutables/AutoValue.
 
-## Core principle
+## Principio central
 
-> The agent never invents symbols. It uses only classes, imports, constructors,
-> methods, builders, fixtures, and commands that are verified by an
-> `evidence-id`. No evidence ⇒ no test.
+> El agente no inventa símbolos. Solo puede usar clases, imports, constructores, métodos, builders, fixtures y comandos verificados con `evidence-id`. Si no hay evidencia, no se genera el test.
 
-## Lean flow
+## Flujo
 
 ```text
-Coverage Orchestrator
-        ↓
-Repository Intelligence   (single agent — owns indexing, classification, dep-graph, contracts, stack profile)
-        ↓
-Incremental Planner       (git delta → affectedClasses → affectedTests → batch-plan)
-        ↓
-Surgical Generator        (AST patches only; templates/ for new files)
-        ↓
-Narrow Validator          (compile-graph pruning + per-class JaCoCo)
-        ↓
-Deterministic Repair      (repair-rules/* first; LLM only if escalated)
-        ↓
-Coverage Cache            (per-class .exec merge → coverage-delta)
-        ↓
-Reporting
+discovery → stack-profile → classification → symbol-contract
+        → dependency-graph → fixtures → planning → generation
+        → validation → repair → reporting
 ```
 
-## Layout
+## Estructura
 
 ```text
-agents/              Lean agents: orchestrator, repository-intelligence,
-                     generation, validation, repair, planning, fixture,
-                     mutation, reporting.
-skills/              Procedures by domain (runtime, fixtures, planning,
-                     generation, validation, repair, coverage, reporting).
-schemas/             JSON Schemas not tied to state (e.g., ast-patch.schema.json).
-state/               Persistent JSON states + state/index/ semantic index.
-state/_schemas/      JSON Schemas (Draft-07) for state validation.
-coverage-cache/      Per-class JaCoCo .exec + summaries (incremental).
-repair-rules/        Deterministic repair rules (.rules files).
-templates/           Deterministic test skeletons (junit5-mockito, springboot, webmvc, reactive).
-docs/                Architecture notes and policies.
-tools/python/        Deterministic pre-stage (POM, classpath, javap, JaCoCo, indexer).
-MASTER_PROMPT.md     Lean master prompt with gates G1–G8.
+agents/              Agentes por fase (incluye stack-profile-agent y mutation-agent)
+skills/              Procedimientos accionables por dominio
+state/               Estados JSON persistentes
+state/_schemas/      JSON Schemas Draft-07 (validación obligatoria)
+docs/                Notas de arquitectura y políticas
+tools/python/        Pre-stage determinista (parsea POM/classpath/javap/JaCoCo)
+MASTER_PROMPT.md     Prompt principal con gates G1–G8
 ```
 
-## Mandatory pre-stage (Python)
+## Pre-stage Python (obligatorio)
 
-Before any LLM call:
+Antes de cualquier ciclo LLM, correr el pipeline determinista que produce todos los `state/*.json`. Esto **reduce drásticamente los tokens** consumidos y acelera la generación (ver [`docs/performance-tuning.md`](docs/performance-tuning.md) y [`docs/python-pipeline.md`](docs/python-pipeline.md)).
 
 ```bash
 mvn -q -DskipTests package
@@ -63,62 +40,47 @@ python tools/python/run_pipeline.py \
    --jacoco-xml target/site/jacoco/jacoco.xml
 ```
 
-Produces the **semantic index** (`state/index/*`) and every derived contract.
-LLM agents read only these JSON files. They never re-parse POMs, classpaths, or
-`.java` sources. See [`docs/python-pipeline.md`](docs/python-pipeline.md).
+## BGBA archetypes
 
-## Gates (anti-hallucination)
+Detección automática de `bgba-parent-pom`, `bgba-parent-paas-java-8` y `bgba-parent-paas-java-21` con reglas derivadas (`javax` vs `jakarta`, JaCoCo heredado vs manual, JUnit 4 vs 5). Ver [`docs/archetype-policy.md`](docs/archetype-policy.md) y la skill [`archetype-detection`](skills/01-discovery/archetype-detection.md).
 
-| Gate | Blocks                                                                |
-|------|-----------------------------------------------------------------------|
-| G1   | Imports outside `import-whitelist.json`                               |
-| G2   | Symbols without `evidence-id`                                         |
-| G3   | Contracts derived from regex (bytecode/AST only)                      |
-| G4   | Generated-sources not indexed when APs are declared                   |
-| G5   | Generation without a valid `stack-profile.json`                       |
-| G6   | AST lint on the projected patch result (pre-compile)                  |
-| G7   | Re-application of a `hash(errorCode, symbolFQN, fixId)` already FAILED|
-| G8   | Convergence (`coverageDelta == 0` × 2 or `compileFailRate > 0.5`)     |
+## Código autogenerado
 
-## Modes
+CXF (`wsdl2java`), OpenAPI Generator, Lombok, FreeBuilder, MapStruct, Immutables y AutoValue se detectan y excluyen del universo de SUT vía [`generated-code-exclusion`](skills/01-discovery/generated-code-exclusion.md) → `state/generated-code-index.json`.
 
-- `coverage` — maximize lines.
-- `branch-coverage` — maximize branches.
-- `mutation-hardening` — kill PIT survivors.
+## Gates anti-alucinación
 
-## Scope (orthogonal to mode)
+| Gate | Qué bloquea |
+|------|-------------|
+| G1 | Imports fuera de `import-whitelist.json` |
+| G2 | Símbolo sin `evidence-id` en contrato |
+| G3 | Contratos derivados de regex (forzar bytecode/AST) |
+| G4 | Generated sources no indexados con APs declarados |
+| G5 | Generation sin `stack-profile.json` válido |
+| G6 | Linter AST pre-compile sobre el test |
+| G7 | Re-aplicación de fix ya fallido |
+| G8 | Convergencia (delta=0 o compile-fail-rate alto) |
 
-- `single-file` (default in VS Code).
-- `incremental` (`state/incremental-map.json` from `git diff`).
-- `full` (only with explicit `--full`).
+## Modos
 
-## Determinism vs LLM
+- `coverage` — maximiza líneas.
+- `branch-coverage` — maximiza ramas y caminos.
+- `mutation-hardening` — endurece tests con PIT sobre mutantes sobrevivientes.
 
-| Done by code (Python / index / repair-rules) | Done by the LLM        |
-|----------------------------------------------|------------------------|
-| Imports, framework detection, dep graph      | Assertions             |
-| Compile-error parsing, stack-trace parsing   | Edge-case selection    |
-| Symbol resolution, classification            | Naming                 |
-| AST patching, JaCoCo merge, delta            | Complex repair reasoning (escalated) |
+## Validación de estados
 
-See [`skills/00-runtime/deterministic-analysis-policy.md`](skills/00-runtime/deterministic-analysis-policy.md) and [`skills/00-runtime/minimal-context-policy.md`](skills/00-runtime/minimal-context-policy.md).
+Todos los `state/*.json` validan contra schemas en `state/_schemas/`. Escritura atómica (`*.tmp` + rename) y hashes SHA-256 en `state/execution-state.json`.
 
-## Token budget
+## VS Code + GitHub Copilot
 
-- Preferred per turn: **< 5k tokens**.
-- Hard limit per turn: **10k tokens**.
-- Aggregated in [`state/token-metrics.json`](state/token-metrics.json).
+Para ejecutar desde Visual Studio Code, usar la guía [`docs/vscode-copilot-execution-guide.md`](docs/vscode-copilot-execution-guide.md) y las instrucciones de proyecto en `.github/copilot-instructions.md`. La arquitectura ahora incluye controles específicos para diagnósticos JDT/Copilot: imports no resueltos, `new Interface()`, uso directo de `Type_Builder` y setters/métodos inventados.
 
-## State validation
+## Cómo arrancar
 
-All `state/*.json` validate against `state/_schemas/`. Atomic writes (`*.tmp` +
-rename). SHA-256 fingerprints in `state/execution-state.json`.
-
-## Quick start
-
-1. Read [`docs/developer-guide.md`](docs/developer-guide.md).
-2. Read [`MASTER_PROMPT.md`](MASTER_PROMPT.md).
-3. Run the pre-stage: `python tools/python/run_pipeline.py …`.
-4. From VS Code chat, paste [`Prompt_inicial.md`](Prompt_inicial.md) with your `mode` and `scope`.
-5. Watch progress in `state/execution-state.json` and `state/_summaries/cycle-*.json`.
-6. Final report from the Reporting Agent.
+1. Leer la [Guía del Desarrollador](docs/developer-guide.md).
+2. Leer `MASTER_PROMPT.md`.
+3. Correr el pre-stage Python (`tools/python/run_pipeline.py`).
+4. Ejecutar Orchestrator con `mode` y `budget` pegando `Prompt_inicial.md` en el chat.
+5. Validar cada test generado con `tools/python/test_linter.py` antes de compilar.
+6. Inspeccionar `state/execution-state.json` y los `state/_summaries/cycle-*.json` para progreso.
+7. Reporte final emitido por `reporting-agent`.

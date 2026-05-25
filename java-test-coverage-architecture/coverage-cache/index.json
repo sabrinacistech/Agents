@@ -1,7 +1,0 @@
-{
-  "$schemaRef": "state/_schemas/coverage-cache-index.schema.json",
-  "version": 1,
-  "baselineHash": null,
-  "lastUpdated": null,
-  "entries": {}
-}

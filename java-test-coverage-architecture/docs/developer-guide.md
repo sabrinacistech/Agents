@@ -46,7 +46,7 @@ mvn -q test jacoco:report
 Reglas:
 - **Nunca** correr `mvn clean` entre ciclos.
 - Si el archetype es `bgba-parent-paas-java-21`, no agregar `jacoco-maven-plugin` al POM (ya lo hereda).
-- Si es `bgba-parent-paas-java-8` y no hay JaCoCo, usar el bootstrap CLI (ver `skills/00-runtime/semantic-index.md` y `tools/python/jacoco_parser.py`).
+- Si es `bgba-parent-paas-java-8` y no hay JaCoCo, usar el bootstrap CLI (ver `skills/01-discovery/jacoco-bootstrap.md`).
 
 ## 3. Correr el pre-stage Python (Phase 0)
 
@@ -176,8 +176,9 @@ Si `writeTests: false`, los tests están en el reporte. Para aplicarlos, repetir
 - [docs/python-pipeline.md](docs/python-pipeline.md) — frontera LLM ↔ Python.
 - [docs/performance-tuning.md](docs/performance-tuning.md) — optimizaciones contra ciclos largos.
 - [docs/archetype-policy.md](docs/archetype-policy.md) — reglas BGBA `paas-java-8` / `paas-java-21`.
-- [agents/repository-intelligence-agent.md](../agents/repository-intelligence-agent.md) — owns archetype detection, generated-code exclusion, and JaCoCo bootstrap (all derived from `state/index/*`).
-- [skills/00-runtime/semantic-index.md](../skills/00-runtime/semantic-index.md)
+- [skills/01-discovery/archetype-detection.md](skills/01-discovery/archetype-detection.md)
+- [skills/01-discovery/generated-code-exclusion.md](skills/01-discovery/generated-code-exclusion.md)
+- [skills/01-discovery/jacoco-bootstrap.md](skills/01-discovery/jacoco-bootstrap.md)
 - [tools/python/README.md](tools/python/README.md) — manual de scripts.
 
 ## 12. Checklist rápido

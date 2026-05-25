@@ -29,6 +29,23 @@ Convertir stderr de `javac`/Maven en `state/compile-error-index.json` accionable
 | `E_OVERRIDE` | `method does not override` | quitar `@Override` o ajustar firma |
 | `E_ACCESS` | `\S+ has private access` | usar API pública/builder/factory |
 
+
+## Mensajes adicionales de VS Code / Eclipse JDT
+
+Cuando se ejecuta desde Visual Studio Code con GitHub Copilot, muchos errores aparecen antes de Maven como diagnósticos JDT. Deben normalizarse al mismo `state/compile-error-index.json`:
+
+| Código | Patrón VS Code/JDT | Reparación segura |
+|--------|---------------------|-------------------|
+| `E_IMPORT_UNRESOLVED` | `The import (\S+) cannot be resolved` | quitar import si no está en whitelist; no reemplazar por paquete inventado |
+| `E_TYPE_UNRESOLVED` | `(\w+) cannot be resolved to a type` | buscar FQCN en `import-whitelist.json`; si no existe, descartar test |
+| `E_INTERFACE_INSTANTIATION` | `Cannot instantiate the type (\w+)` | aplicar contrato `instantiation.strategy`; nunca `new interface` |
+| `E_METHOD_UNRESOLVED` | `The method (\w+)\([^)]*\) is undefined for the type (\w+)` | usar solo métodos/setters enumerados en contrato |
+| `E_METHOD_UNRESOLVED` | `The method (\w+)\([^)]*\) from the type (\w+) refers to the missing type` | bloquear: falta tipo en classpath/import whitelist |
+| `E_CONSTRUCTOR_UNRESOLVED` | `The constructor (\w+)\([^)]*\) is undefined` | usar constructor/builder/factory verificado |
+| `E_ACCESS` | `The type (\w+) is not visible` | no usar API no pública; buscar API pública verificada |
+
+Regla clave para Copilot: un diagnóstico JDT no habilita al LLM a “adivinar” el import correcto. Primero se consulta `state/import-whitelist.json`; si no hay match único, se elimina el uso o se descarta el test.
+
 ## Salida: `state/compile-error-index.json`
 
 ```json

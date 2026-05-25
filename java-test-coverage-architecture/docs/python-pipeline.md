@@ -85,3 +85,8 @@ Todo lo que es **parseable** (POM, classpath, bytecode, JaCoCo XML, log de Maven
 - `bytecode_scanner`: una vez por compilación nueva de `target/classes`.
 - `jacoco_parser`: tras cada ciclo de tests.
 - `compile_error_parser`: tras cada `mvn test` que falle compilación.
+
+
+## Enriquecimiento de contratos desde source
+
+El pipeline incluye `source_symbol_enricher.py` después de `bytecode_scanner.py`. Este paso agrega semántica que `javap` no expone de forma suficiente para Copilot: anotaciones `@FreeBuilder`, existencia de `Type.Builder`, setters legales del builder y estrategia segura de instanciación. Si no puede probar un builder, deja el tipo como `mock` para colaboradores pasivos o bloquea la fixture.
