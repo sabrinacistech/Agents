@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -365,8 +366,6 @@ def main() -> int:
     if args.out:
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic write
-        import os
         tmp = out_path.with_suffix(out_path.suffix + ".tmp")
         tmp.write_text(out_json, encoding="utf-8")
         os.replace(tmp, out_path)

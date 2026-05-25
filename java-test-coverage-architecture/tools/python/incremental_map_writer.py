@@ -22,6 +22,7 @@ Anti-patterns prevented:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import subprocess
 import sys
@@ -302,7 +303,6 @@ def main() -> int:
         full = repo / rel
         if full.exists():
             fingerprint_sources.append(sha256_file(full)[:8])
-    import hashlib
     run_fingerprint = hashlib.sha256("|".join(fingerprint_sources).encode()).hexdigest()[:16]
 
     # ── 7. Write incremental-map.json ─────────────────────────────────────────

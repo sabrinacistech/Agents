@@ -31,8 +31,7 @@ def parse_report(xml_path: Path) -> dict:
     for pkg in root.findall("package"):
         pkg_name = pkg.get("name", "").replace("/", ".")
         for cls in pkg.findall("class"):
-            cls_name = cls.get("name", "").replace("/", ".")
-            fqcn = cls_name  # already dotted via replace above? no — JaCoCo uses slashes
+            fqcn = cls.get("name", "").replace("/", ".")
             methods = {}
             for m in cls.findall("method"):
                 methods[f"{m.get('name')}{m.get('desc','')}"] = _counters(m)
@@ -49,7 +48,6 @@ def emit_targets(perclass: dict, mode: str) -> dict:
     for fqcn, data in perclass.items():
         line_missed = data["counters"].get("LINE", {}).get("missed", 0)
         branch_missed = data["counters"].get("BRANCH", {}).get("missed", 0)
-        cxty = data["counters"].get("COMPLEXITY", {}).get("missed", 0) + data["counters"].get("COMPLEXITY", {}).get("covered", 0)
         for mname, mcnt in data["methods"].items():
             ml = mcnt.get("LINE", {}).get("missed", 0)
             mb = mcnt.get("BRANCH", {}).get("missed", 0)

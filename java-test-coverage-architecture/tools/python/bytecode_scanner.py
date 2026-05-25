@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from common import atomic_write_json, find_tool, load_json, run, validate
@@ -85,8 +86,9 @@ def scan_class(class_file: Path, javap: str) -> dict | None:
         line = lines[i].strip()
         nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
         # Member line + descriptor line
-        if DESC_RE.match(nxt):
-            desc = DESC_RE.match(nxt).group(1)
+        desc_match = DESC_RE.match(nxt)
+        if desc_match:
+            desc = desc_match.group(1)
             decl = line.rstrip(";")
             # Constructor: "<FQCN>(...)"
             is_ctor = decl.endswith(")") and (
@@ -217,7 +219,6 @@ def main() -> int:
     # Write/update the manifest (state/symbol-contracts.json) so it reflects
     # the per-FQCN files just written. Agents load individual files by FQCN;
     # the manifest is an index for quick lookup and freshness checks.
-    from datetime import datetime, timezone
     manifest_path = state_dir / "symbol-contracts.json"
     # Merge with any existing entries from other modules
     existing_manifest: list[dict] = []

@@ -105,7 +105,8 @@ def enrich_contract(contract_path: Path, src: dict, source_index: dict[str, dict
     annotations = set(c.get("annotations", []))
     for ann in src.get("annotations", []):
         if ann not in annotations:
-            annotations.add(ann); changed = True
+            annotations.add(ann)
+            changed = True
     c["annotations"] = sorted(annotations)
 
     fqcn = c["fqcn"]
