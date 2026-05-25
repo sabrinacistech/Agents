@@ -1,0 +1,14 @@
+{
+  "$schemaRef": "state/_schemas/token-metrics.schema.json",
+  "version": 1,
+  "generatedAt": null,
+  "totals": {
+    "tokensIn": 0,
+    "tokensOut": 0,
+    "calls": 0,
+    "overBudgetCalls": 0
+  },
+  "byPhase": {},
+  "byAgent": {},
+  "samples": []
+}
