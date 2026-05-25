@@ -1,33 +1,44 @@
 # Context Control
 
-## Objetivo
-Mantener el contexto del LLM enfocado en la fase actual. Evita ruido y reduce alucinación.
+> Companion skill to `skills/00-runtime/minimal-context-policy.md`. This file
+> defines **what to load** per phase; `minimal-context-policy.md` defines **what
+> never enters a prompt** plus token budgets.
 
-## Reglas
-- Cargar **solo** los skills de la fase activa más los contratos vigentes (`stack-profile`, `import-whitelist`, `symbol-contracts/<sut>` actual).
-- Estados históricos > 1 ciclo ⇒ comprimir a resumen (`state/_summaries/cycle-<n>.json`).
-- No cargar JaCoCo XML completo en contexto; pasar el delta computado.
-- No cargar código productivo completo; pasar solo los fragmentos referenciados por `evidence-id`.
-- Cada agente declara su presupuesto máximo (tokens) y rechaza cargar más.
+## Loading rules
 
-## Antipatrones
-- "Cargar todo el repo por las dudas".
-- "Reincluir el contrato global en cada paso".
-- Repetir el MASTER_PROMPT entero en cada subagente (se referencia, no se copia).
+- Load **only** the skills for the active phase plus the projected contracts
+  in scope (`stack-profile`, projected `symbol-contracts/_views/<batchId>.json`,
+  whitelist subset).
+- Historical state > 1 cycle ⇒ compress to `state/_summaries/cycle-<n>.json`.
+- Never load full JaCoCo XML; pass `state/coverage-delta.json` instead.
+- Never load full production source; pass fragments cited by `evidence-id`.
+- Every agent declares its token budget and refuses to load more.
 
-## Determinismo vs LLM (Phase 2)
+## Determinism vs LLM
 
-El context budget se respeta porque el trabajo pesado **no llega al LLM**. Antes de armar un prompt, validar contra `skills/00-runtime/deterministic-analysis-policy.md`:
+Heavy work does not reach the LLM. Before assembling a prompt, validate against
+`skills/00-runtime/deterministic-analysis-policy.md`:
 
-- Imports, framework, dependencias, compile errors, stack traces ⇒ **fuera del prompt** (vienen ya resueltos vía `state/index/` y `state/compile-error-index.json`).
-- Solo entran al prompt: target method, colaboradores necesarios, líneas fallantes (no el archivo entero), contratos mínimos, fixtures mínimas.
+- Imports, frameworks, dependencies, compile errors, stack traces ⇒ **outside**
+  the prompt (already resolved through `state/index/` and
+  `state/compile-error-index.json`).
+- Only inside the prompt: target method, required collaborators, failing lines
+  (not the whole file), minimal contracts, minimal fixtures.
 
-## Surgical inputs (Phase 4)
+## Surgical inputs
 
-Para generación y reparación, preferir **inputs quirúrgicos**:
+For generation and repair, prefer surgical inputs:
 
-- método objetivo + firma de colaboradores (no la clase completa),
-- líneas con error (no el archivo de test entero),
-- fragmentos citados por `evidence-id` (no el contrato completo).
+- target method + collaborator signatures (not the whole class),
+- failing lines ± 2 lines (not the whole test file),
+- fragments cited by `evidence-id` (not the whole contract).
 
-Ver `skills/07-generation/ast-patch-generation.md`.
+See `skills/07-generation/ast-patch-generation.md` and
+`skills/00-runtime/minimal-context-policy.md`.
+
+## Anti-patterns
+- "Load the whole repo just in case."
+- "Re-include the full contract on every step."
+- "Repeat MASTER_PROMPT.md in every subagent" (reference by name, never duplicate).
+- "Paste the JaCoCo XML / POM / stack trace verbatim."
+- "Include unrelated methods of the SUT."
