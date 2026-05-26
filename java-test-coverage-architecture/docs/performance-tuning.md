@@ -125,3 +125,27 @@ Las optimizaciones anteriores son la base. El roadmap incremental añade:
 | Tamaño prompt repair (típico)          | 1.5k-3k                  | 0.3k-0.8k       |
 | Latencia generación de 1 test (warm)   | 30-90s                   | 5-15s           |
 
+## Trabajo futuro (paralelismo)
+
+Optimizaciones identificadas que **aún no están implementadas** en `tools/python/run_pipeline.py`. Se documentan acá para que cualquier refactor futuro tenga el plan ya escrito; el código actual sigue siendo secuencial por simplicidad y reproducibilidad de logs.
+
+### 1. Pasos independientes en paralelo
+
+Los siguientes pasos no comparten dependencias de I/O sobre `state/*.json` y pueden ejecutarse en paralelo después de Step 1 (POM parsing):
+
+- `archetype_detector.py` ∥ `generated_code_scanner.py` ∥ `classpath_resolver.py`
+
+Beneficio estimado: −2 a −5 segundos por ciclo Phase 0 en repos medianos.
+
+### 2. `bytecode_scanner` N-paralelo por FQCN
+
+`bytecode_scanner.py` ya es por-clase a nivel de output (un `symbol-contracts/<fqcn>.json` por SUT). Una pool de workers (multiprocessing) que reparta los FQCNs por archivo de `target/classes/**/*.class` reduciría wall-clock de O(n) a O(n/workers) en repos con > 50 SUTs candidatos.
+
+Riesgo conocido: contención sobre `state/_cache/` si varios procesos escriben simultáneamente entradas con el mismo SHA. Mitigación: shard del cache por hash-prefix o lock con `fcntl.flock` por entrada.
+
+### 3. Auditoría del cache `state/_cache/`
+
+`state/_cache/` ya está documentado como activo por defecto. Trabajo pendiente: agregar un script de verificación (`tools/python/cache_audit.py`) que recorra los 24 scripts del pipeline y reporte cuáles llaman `cache.lookup()` / `cache.put()` y cuáles re-computan sin consultar. Salida sugerida: `state/_cache/audit.json` con `{script, cacheHits, cacheMisses, bypassed}`.
+
+> Estas optimizaciones son **opt-in futuro**. No se implementan en este refactor porque excederían el alcance de "estructura/documentación" definido en las reglas duras de ejecución.
+
