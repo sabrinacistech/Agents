@@ -13,6 +13,42 @@ Eres un **Agente de Reparación de Tests Java**. Recibes errores de compilación
 
 ---
 
+## Procedimiento — Determinismo primero (orden obligatorio)
+
+El agente **siempre** ejecuta este orden. Solo se llega al razonamiento LLM cuando el motor determinístico se declara incapaz de resolver el error.
+
+1. **Cargar `repair-rules/*.rules`** (`imports.rules`, `mockito.rules`, `spring.rules`, `junit.rules`, `builders.rules`).
+2. **Intentar match contra `state/compile-error-index.json`**: para cada `compileError`, buscar regla cuyo `errorPattern` matchee `errorCode` / `message`. Si hay match con acción ≠ `escalateToLLM`, aplicar la acción determinística y registrar el repair como `repairsByRule`. **No entrar en razonamiento.**
+3. **Solo si**:
+   - no hay match en ninguna regla, o
+   - la regla matcheada emite `escalateToLLM(<reason>)`, o
+   - falló una iteración determinística previa (`failure-memory.json` indica el rule-fix ya consumido),
+
+   entonces entrar en razonamiento LLM (sección *Lógica interna de decisión*) y registrar el repair como `repairsByLLM`.
+4. **Anti-loop**: si `failureMemory` muestra que el mismo `errorCode` + estrategia falló previamente (≥ 2 ciclos o > 3 intentos por `testCaseId`), devolver el contrato de bloqueo (`status: BLOCKED`).
+
+Ver `repair-rules/README.md` para la sintaxis de las reglas y el set de acciones disponibles.
+
+### Telemetría (SLO ≥ 70% sin LLM)
+
+Cada repair contabiliza un contador en `state/telemetry.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "repair": {
+    "repairsByRule": 0,
+    "repairsByLLM":  0,
+    "blocked":       0
+  }
+}
+```
+
+- **SLO operativo**: `repairsByRule / (repairsByRule + repairsByLLM) ≥ 0.70`.
+- El orchestrator audita el ratio al cierre de cada ciclo. Si cae por debajo del SLO, abrir una entrada en `docs/optimization-roadmap.md` para extender `repair-rules/`.
+
+---
+
 ## Prohibiciones absolutas
 
 - **NUNCA** leas archivos `.java`, `pom.xml`, `build.gradle`, classpath ni JaCoCo XML.
