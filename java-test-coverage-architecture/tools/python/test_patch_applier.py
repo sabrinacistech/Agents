@@ -73,7 +73,57 @@ _BODY_PLACEHOLDER_RE = re.compile(
 )
 
 
+# ── Body safety: forbidden Java structures inside methods[].body ─────────────
+# A test method body may NOT contain top-level import/package statements or
+# nested class/interface/enum declarations. Enforced at render time.
+_BODY_FORBIDDEN = (
+    re.compile(r"(?m)^\s*import\s+"),
+    re.compile(r"(?m)^\s*package\s+"),
+    re.compile(r"(?m)^\s*public\s+class\b"),
+    re.compile(r"(?m)^\s*class\s+\w+"),
+    re.compile(r"(?m)^\s*interface\s+\w+"),
+    re.compile(r"(?m)^\s*enum\s+\w+"),
+)
+
+
+def _validate_body(body: str) -> None:
+    if not body:
+        return
+    for pat in _BODY_FORBIDDEN:
+        m = pat.search(body)
+        if m:
+            raise PermissionError(
+                f"FORBIDDEN_JAVA_STRUCTURE_IN_BODY: {m.group(0).strip()!r}"
+            )
+
+
 # ── Import perimeter helpers ──────────────────────────────────────────────────
+
+def _authorized_imports_from_whitelist(wl: dict) -> set[str]:
+    """Extract authorized identifiers from an import-whitelist.json.
+
+    Supports the schema-conformant shape (``packages: [{name, origin}]`` /
+    ``classes: [{fqcn, origin}]``) AND legacy/free-form string arrays.
+    Items that are neither strings nor dicts with the expected key are skipped.
+    Never raises — accepts mixed input.
+    """
+    out: set[str] = set()
+    for item in (wl.get("packages") or []):
+        if isinstance(item, str):
+            out.add(item)
+        elif isinstance(item, dict):
+            name = item.get("name")
+            if isinstance(name, str):
+                out.add(name)
+    for item in (wl.get("classes") or []):
+        if isinstance(item, str):
+            out.add(item)
+        elif isinstance(item, dict):
+            fqcn = item.get("fqcn")
+            if isinstance(fqcn, str):
+                out.add(fqcn)
+    return out
+
 
 def _import_in_authorized_set(imp: str, authorized: set[str]) -> bool:
     """Return True if *imp* (a patch.allowedImports entry) is covered by *authorized*.
@@ -162,9 +212,10 @@ def _indent_body(body: str) -> str:
 
 
 def _render_method(m: dict) -> str:
+    body_raw = (m.get("body") or "").strip()
+    _validate_body(body_raw)
     anns = m.get("annotations") or ["@Test"]
     ann_lines = "\n".join(f"    {a}" for a in anns)
-    body_raw = (m.get("body") or "").strip()
     ev_ids = m.get("evidenceIds") or []
     if ev_ids and "// evidence:" not in body_raw:
         body_raw = body_raw + f"\n// evidence: {', '.join(ev_ids)}"
@@ -521,8 +572,7 @@ def main() -> int:
             except Exception as exc:
                 print(f"[FAIL] Cannot load whitelist: {exc}", file=sys.stderr)
                 return 2
-            authorized_imports.update(wl.get("packages") or [])
-            authorized_imports.update(wl.get("classes") or [])
+            authorized_imports.update(_authorized_imports_from_whitelist(wl))
 
     # Validate every declared import against the authorized perimeter
     if authorized_imports is not None:
