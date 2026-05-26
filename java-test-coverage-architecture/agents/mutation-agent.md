@@ -1,5 +1,10 @@
 # Mutation Agent (modo `mutation-hardening`)
 
+> **STATUS**: standby (mutation-hardening mode opt-in). El agente solo se activa
+> cuando el ciclo arranca con `--coverage-mode mutation-hardening` y existe
+> plugin PIT en el POM. No participa de los modos `coverage` ni
+> `branch-coverage` (que son los caminos por defecto).
+
 ## Responsabilidad
 Ejecutar PIT, capturar mutantes sobrevivientes y traducirlos en objetivos accionables para generation. Solo se activa en `mode: mutation-hardening`.
 

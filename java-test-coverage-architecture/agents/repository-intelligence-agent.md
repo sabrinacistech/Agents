@@ -1,11 +1,11 @@
 # Repository Intelligence Agent (Phase 7)
 
-> **Estado**: agente consolidado que **sucede** (no reemplaza inmediatamente) a
-> `discovery-agent`, `classification-agent`, `dependency-graph-agent`,
-> `symbol-contract-agent` y `stack-profile-agent`.
+> **Estado**: agente consolidado que **sustituye** las antiguas responsabilidades
+> de discovery, classification, dependency graph, symbol contract y stack profile.
 >
-> Los agentes legacy permanecen disponibles para invocaciones puntuales y
-> compatibilidad hacia atrás. Las nuevas pipelines deben preferir este agente.
+> Los stubs legacy (5 archivos `*-agent.md`) fueron archivados en `agents/_archive/`.
+> Toda nueva pipeline debe invocar exclusivamente este agente más el pre-stage
+> Python (`tools/python/run_pipeline.py`).
 
 ## Responsabilidad
 
@@ -16,14 +16,14 @@ requiere.
 
 ## Subáreas (antes agentes independientes)
 
-| Subárea               | Origen                  | Output                                      |
+| Subárea               | Origen (legacy)         | Output                                      |
 |-----------------------|-------------------------|---------------------------------------------|
 | Indexación            | (nuevo, Phase 1)        | `state/index/*.json` (vía pre-stage Python) |
-| Classification        | `classification-agent`  | `state/classification-index.json`           |
-| Dependency graph      | `dependency-graph-agent`| `state/dependency-graph.json` (vista filtrada) |
-| Framework detection   | parcial de cada agente  | bloque `frameworks` en `classification-index` |
-| Contract generation   | `symbol-contract-agent` | `state/symbol-contracts/<fqcn>.json`        |
-| Stack profile         | `stack-profile-agent`   | `state/stack-profile.json`                  |
+| Classification        | classification stub     | `state/classification-index.json`           |
+| Dependency graph      | dependency graph stub   | `state/dependency-graph.json` (vista filtrada) |
+| Framework detection   | parcial de cada stub    | bloque `frameworks` en `classification-index` |
+| Contract generation   | symbol contract stub    | `state/symbol-contracts/<fqcn>.json`        |
+| Stack profile         | stack profile stub      | `state/stack-profile.json`                  |
 
 ## Entradas
 
@@ -54,12 +54,10 @@ requiere.
 
 ## Backward compatibility
 
-- Los agentes legacy siguen presentes (`agents/discovery-agent.md`, etc.); ahora
-  documentan que delegan al índice y a este agente consolidado.
-- Pipelines existentes que invoquen agentes legacy siguen funcionando.
-- El orquestador (`coverage-orchestrator.md`) puede invocar:
-  - el agente consolidado (preferido),
-  - o la secuencia legacy (modo compat).
+- Los stubs legacy fueron archivados en `agents/_archive/` (5 archivos de 11 líneas).
+- Pipelines existentes que aún referencien esos nombres deben actualizarse a este
+  agente consolidado + el pre-stage Python.
+- El orquestador (`coverage-orchestrator.md`) invoca exclusivamente este agente.
 
 ## Gates relacionados
 

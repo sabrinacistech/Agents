@@ -30,7 +30,7 @@ Por cada `<wsdlOption><wsdl>...</wsdl></wsdlOption>`:
 - Si el spec no existe ⇒ `BLOCKED_MISSING_CONTRACT`.
 
 ### Otros annotation processors
-- Lombok, FreeBuilder, MapStruct, Immutables, AutoValue (ver `stack-profile-agent`).
+- Lombok, FreeBuilder, MapStruct, Immutables, AutoValue (ver `state/stack-profile.json`).
 - Marcar carpetas `target/generated-sources/annotations`.
 
 ## Reglas de exclusión

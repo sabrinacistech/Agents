@@ -1,16 +1,16 @@
 # Semantic Index Architecture
 
-> Phase 1 of the optimization roadmap. See `docs/optimization-roadmap.md`.
+> Phase 1 del refactor de arquitectura determinista (`state/index/*.json`).
 
 ## Motivación
 
-El sistema original realiza análisis estructural de forma redundante:
+El sistema original (pre-Phase 7) realizaba análisis estructural de forma redundante:
 
-- `discovery-agent` lee POMs y estructura de carpetas.
-- `classification-agent` re-lee `.java` para detectar Spring/JPA/etc.
-- `dependency-graph-agent` reconstruye dependencias por su cuenta.
-- `symbol-contract-agent` invoca `javap`/JavaParser de nuevo.
-- `stack-profile-agent` repite parte del trabajo anterior.
+- La fase de **discovery** leía POMs y estructura de carpetas.
+- La fase de **classification** re-leía `.java` para detectar Spring/JPA/etc.
+- La fase de **dependency graph** reconstruía dependencias por su cuenta.
+- La fase de **symbol contract** invocaba `javap`/JavaParser de nuevo.
+- La fase de **stack profile** repetía parte del trabajo anterior.
 
 Resultado: O(N agentes × M archivos) operaciones de parseo en lugar de O(M).
 
@@ -31,10 +31,13 @@ pre-stage Python y consumida por todos los agentes vía lookups O(1) sobre JSON.
                          │ lookups O(1)
    ┌────────┬────────────┼────────────┬────────┐
    ▼        ▼            ▼            ▼        ▼
-discovery class.    dependency   symbol.    stack
-agent    agent      graph agent  contract   profile
-                                   agent      agent
+discovery   class.    dependency   symbol     stack
+phase       phase     graph phase  contract   profile
+                                   phase      phase
 ```
+
+> Las cinco fases anteriormente representadas como agentes independientes están
+> hoy consolidadas en `agents/repository-intelligence-agent.md`.
 
 ## Esquemas
 
@@ -64,7 +67,7 @@ Cada archivo de índice valida contra un schema en `state/_schemas/index/`:
 | Antes                                         | Después                                |
 |-----------------------------------------------|----------------------------------------|
 | Cada agente parseaba lo que necesitaba.       | Los agentes consultan `state/index/`. |
-| `symbol-contract-agent` lanzaba `javap` ad-hoc.| `symbol-contract-agent` deriva de `methods.json` + `annotations.json`. |
+| La fase de symbol contract lanzaba `javap` ad-hoc.| Esa fase deriva de `methods.json` + `annotations.json`. |
 | `dependency-graph.json` se reconstruía completo. | Vista filtrada/derivada de `dependencies.json`. |
 
 Los archivos legacy (`symbol-contracts/`, `dependency-graph.json`, `import-whitelist.json`,

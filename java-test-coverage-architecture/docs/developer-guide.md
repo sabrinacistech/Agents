@@ -123,7 +123,7 @@ Responder en el chat con `ok` (o ajustes) para avanzar. A partir del segundo cic
 | `branch-coverage` | Cobertura ya alta en líneas, faltan ramas. |
 | `mutation-hardening` | Tests existen pero PIT muestra mutantes vivos. Requiere `state/mutation-intelligence.json`. |
 
-## 7. Tamaños de batch (los aplica `planning-agent`)
+## 7. Tamaños de batch (los aplica `coverage_planner.py` vía `coverage-orchestrator`)
 
 | Tipo de SUT | Batch máx. |
 |-------------|------------|

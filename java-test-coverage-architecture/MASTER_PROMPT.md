@@ -24,31 +24,33 @@ Incrementar cobertura de tests unitarios en proyectos Java, priorizando clases d
 
 ## Estados obligatorios
 
-Antes de generar tests deben existir o actualizarse estos contratos. Cada uno debe validar contra su JSON Schema en `state/_schemas/`.
+Tabla canónica de los estados `state/*.json` del sistema. Cada uno valida
+contra su JSON Schema en `state/_schemas/`. Escritura atómica obligatoria
+(`*.tmp` + `rename`); `execution-state.json` referencia los hashes SHA-256
+vigentes de cada estado.
 
-```text
-state/build-tool-contract.json
-state/stack-profile.json
-state/classification-index.json
-state/import-whitelist.json
-state/symbol-contracts/<fqcn>.json     # uno por SUT, no archivo único global
-state/dependency-graph.json
-state/fixture-catalog.json
-state/coverage-targets.json
-state/batch-plan.json
-state/execution-state.json
-state/failure-memory.json
-```
-
-Adicionalmente, generados por el pre-stage Python (ver `docs/python-pipeline.md`):
-
-```text
-state/archetype-profile.json            # BGBA parent + reglas derivadas
-state/generated-code-index.json         # CXF, OpenAPI, APs y FQCNs excluidos
-state/compile-error-index.json          # parseo de fallas de Maven
-```
-
-Escritura atómica: escribir `*.tmp` y luego `rename`. `execution-state.json` referencia los hashes SHA-256 vigentes de cada estado.
+| State                                 | Produced by                                                    | Required before LLM? |
+|---------------------------------------|----------------------------------------------------------------|----------------------|
+| `build-tool-contract.json`            | `tools/python/pom_parser.py`                                   | Yes                  |
+| `archetype-profile.json`              | `tools/python/archetype_detector.py`                           | Yes                  |
+| `generated-code-index.json`           | `tools/python/generated_code_scanner.py`                       | Yes                  |
+| `import-whitelist.json`               | `tools/python/classpath_resolver.py`                           | Yes                  |
+| `stack-profile.json`                  | `tools/python/stack_profile_detector.py`                       | Yes                  |
+| `symbol-contracts/<fqcn>.json`        | `tools/python/bytecode_scanner.py` + `source_symbol_enricher.py` | Yes                |
+| `coverage-targets.json`               | `tools/python/jacoco_parser.py --mode targets`                 | Yes (cuando hay baseline JaCoCo) |
+| `index/*.json`                        | `tools/python/semantic_index_writer.py`                        | Yes                  |
+| `classification-index.json`           | `tools/python/classification_analyzer.py`                      | Yes                  |
+| `dependency-graph.json`               | `tools/python/dependency_graph_extractor.py`                   | Yes                  |
+| `fixture-catalog.json`                | `tools/python/fixture_catalog_builder.py`                      | Yes                  |
+| `batch-plan.json`                     | `tools/python/coverage_planner.py`                             | Yes                  |
+| `incremental-map.json`                | `tools/python/incremental_map_writer.py`                       | Yes (cuando `--since`) |
+| `context-packs/<fqcn>.json`           | `tools/python/context_pack_builder.py`                         | Yes (input LLM)      |
+| `execution-state.json`                | `coverage-orchestrator` (runtime)                              | No (runtime)         |
+| `failure-memory.json`                 | `coverage-orchestrator` + `repair-agent`                       | No (runtime)         |
+| `compile-error-index.json`            | `tools/python/compile_error_parser.py` (post-build)            | No (post-LLM)        |
+| `coverage-delta.json` / `coverage-summary.json` | `tools/python/jacoco_parser.py`                       | No (post-LLM)        |
+| `generated-tests.json`                | `tools/python/test_patch_applier.py`                           | No (post-LLM)        |
+| `mutation-intelligence.json`          | `mutation-agent` (modo `mutation-hardening`, opt-in)           | No (modo opcional)   |
 
 ## División absoluta del trabajo
 

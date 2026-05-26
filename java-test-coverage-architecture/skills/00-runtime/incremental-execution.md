@@ -35,7 +35,7 @@ C\u00e1lculo (determin\u00edstico):
 - **Compile narrowing**: pasar `-pl <module> -am -Dtest=<list>` y NO ejecutar `clean`.
 - **JaCoCo parcial**: usar `jacoco:report` sobre el m\u00f3dulo afectado; el reporte se
   cruza con `coverageDeltaScope` antes de presentarse.
-- **Validation parcial**: G6 (linter AST) y G1 (whitelist) solo sobre `affectedTests`.
+- **Validation parcial**: G6 (static pre-compile linter) y G1 (whitelist) solo sobre `affectedTests`.
 - **Repair parcial**: el ciclo de repair itera \u00fanicamente sobre tests fallidos del
   scope (ver Phase 6).
 

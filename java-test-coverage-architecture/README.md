@@ -17,7 +17,7 @@ discovery → stack-profile → classification → symbol-contract
 ## Estructura
 
 ```text
-agents/              Agentes por fase (incluye stack-profile-agent y mutation-agent)
+agents/              Agentes por fase (orchestrator, test-intent, test-body, repair, reporting, ...)
 skills/              Procedimientos accionables por dominio
 state/               Estados JSON persistentes
 state/_schemas/      JSON Schemas Draft-07 (validación obligatoria)
@@ -57,7 +57,7 @@ CXF (`wsdl2java`), OpenAPI Generator, Lombok, FreeBuilder, MapStruct, Immutables
 | G3 | Contratos derivados de regex (forzar bytecode/AST) |
 | G4 | Generated sources no indexados con APs declarados |
 | G5 | Generation sin `stack-profile.json` válido |
-| G6 | Linter AST pre-compile sobre el test |
+| G6 | Static pre-compile linter sobre el test |
 | G7 | Re-aplicación de fix ya fallido |
 | G8 | Convergencia (delta=0 o compile-fail-rate alto) |
 

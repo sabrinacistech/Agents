@@ -45,7 +45,7 @@ Cada repair contabiliza un contador en `state/telemetry.json`:
 ```
 
 - **SLO operativo**: `repairsByRule / (repairsByRule + repairsByLLM) ≥ 0.70`.
-- El orchestrator audita el ratio al cierre de cada ciclo. Si cae por debajo del SLO, abrir una entrada en `docs/optimization-roadmap.md` para extender `repair-rules/`.
+- El orchestrator audita el ratio al cierre de cada ciclo. Si cae por debajo del SLO, registrar el gap en el tracker del equipo y extender `repair-rules/` con la nueva regla.
 
 ---
 

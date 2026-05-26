@@ -61,7 +61,7 @@ Si el changelog contradice el POM, el POM gana. Registrar diff en `state/archety
 - `archetype: java-8` ⇒ prohibido `jakarta.*` y APIs Java 9+ (ver `skills/07-generation/java-8-compatibility.md`).
 - `archetype: java-21` ⇒ prohibido agregar plugin JaCoCo manualmente al POM.
 - `archetype: java-8` + sin JaCoCo detectado ⇒ habilitar bootstrap por CLI (ver `jacoco-bootstrap.md`), **sin modificar el POM**.
-- Si el parent no es BGBA, marcar `archetype: unknown` y caer al flujo genérico (`stack-profile-agent`).
+- Si el parent no es BGBA, marcar `archetype: unknown` y caer al flujo genérico (`state/stack-profile.json` producido por `tools/python/stack_profile_detector.py`).
 
 ## Token-saving
 El LLM consume solo `state/archetype-profile.json` (compacto). No relee POMs ni changelogs en cada fase.

@@ -41,7 +41,7 @@ los fragmentos `source` mínimos dentro de operaciones.
 
 - **Cero rewrites**: un patch NO reemplaza el archivo completo.
 - **Atomic per-test**: un patch agrupa operaciones de **un** test agregado.
-- **Validación previa**: el aplicador valida G1 (whitelist) y G6 (linter AST) sobre el resultado proyectado, antes de escribir.
+- **Validación previa**: el aplicador valida G1 (whitelist) y G6 (static pre-compile linter) sobre el resultado proyectado, antes de escribir.
 - **Idempotencia**: aplicar el mismo patch dos veces es no-op.
 - **Reversible**: el aplicador escribe `state/_patches/<patchId>.diff` para auditoría/rollback.
 

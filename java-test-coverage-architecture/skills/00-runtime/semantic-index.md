@@ -77,7 +77,7 @@ El índice es **fuente** para los contratos derivados; nunca al revés.
 
 - G1 (import whitelist) → se construye desde `imports.json` + `dependencies.json`.
 - G3 (bytecode-first) → el índice ya respeta precedencia: bytecode > AST.
-- G6 (linter AST) → reutiliza `methods.json` para validar firmas referenciadas.
+- G6 (static pre-compile linter) → reutiliza `methods.json` para validar firmas referenciadas.
 
 ## Antipatrones
 
