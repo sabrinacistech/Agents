@@ -150,6 +150,30 @@ mediante `test_patch_applier.py` con un patch JSON explícito.
 
 ---
 
+## Regla 6 — Compact context pack (`--compact`)
+
+`context_pack_builder.py --compact` emite, además del pack legible en
+`state/context-packs/<fqcn>.json`, una proyección minificada en
+`state/context-packs-compact/<fqcn>.json`. Esta proyección es la entrada
+preferida del LLM en producción y respeta el schema
+[`state/_schemas/protocols/context-pack-compact.schema.json`](../state/_schemas/protocols/context-pack-compact.schema.json).
+
+### Campos omitidos por diseño
+
+- `forbidden[] is omitted from compact packs because enforcement lives in system prompt + gate_runner + patcher + linter.`
+- `classification.{risk, score, reasons, tags, loc, publicMethods, cyclomatic, coverage}` — son señales planner-only y no influyen en la redacción del test.
+- `coverage.targets[].score` — idem, decidido por el planner antes de emitir el batch.
+- `methods[].usable == false` — la fila completa se descarta; el flag deja de ser necesario.
+
+### Reducciones estructurales
+
+- `eid[]` actúa como pool indexado; `ctor[*][0]` y `meth[*][0]` son índices a ese pool.
+- `imp` se prefijo-comprime sólo cuando hay ≥3 imports por prefijo; en caso contrario se emite array plano.
+- `--max-imports N` (default 40) trunca la lista; cuando hay truncado se escribe
+  `state/_summaries/llm-budget.json` con `truncatedFields: ["imp"]`.
+
+---
+
 ## Métricas de referencia
 
 | Práctica prohibida | Costo estimado | Alternativa |

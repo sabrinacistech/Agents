@@ -12,7 +12,28 @@ el mismo patch descriptor canónico. La única distinción es el prefijo del `pa
 
 ---
 
-## Response Format Hint (schema-constrained output)
+## Response Format Hint
+
+Cuando exista un cliente LLM en `tools/python/`, configurar `response_format`
+con el JSON Schema canónico de cada agente:
+
+```python
+# test-body-agent / repair-agent
+response_format = {
+    "type": "json_schema",
+    "schema": load_json("state/_schemas/protocols/patch-descriptor.schema.json"),
+}
+
+# test-intent-agent
+response_format = {
+    "type": "json_schema",
+    "schema": load_json("state/_schemas/protocols/test-intent.schema.json"),
+}
+```
+
+Para Anthropic, usar `tools=[{"name": "...", "input_schema": <schema>}]` con
+`tool_choice={"type":"tool","name":"..."}`. Para OpenAI, usar
+`response_format={"type":"json_schema","json_schema":{"name":"...","schema":<schema>,"strict":true}}`.
 
 El JSON Schema canónico del Patch Descriptor vive en
 [`state/_schemas/protocols/patch-descriptor.schema.json`](../state/_schemas/protocols/patch-descriptor.schema.json) y debe declararse como
