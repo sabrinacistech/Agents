@@ -12,6 +12,24 @@ el mismo patch descriptor canónico. La única distinción es el prefijo del `pa
 
 ---
 
+## Response Format Hint (schema-constrained output)
+
+El JSON Schema canónico del Patch Descriptor vive en
+[`state/_schemas/patch-descriptor.schema.json`](../state/_schemas/patch-descriptor.schema.json) y debe declararse como
+**response format hint** en cualquier integración LLM (Anthropic
+`tools` con `input_schema`, OpenAI structured outputs, JSON-mode con
+schema, etc.).
+
+El esquema acepta dos variantes mediante `oneOf`:
+
+1. **Patch válido** — objeto con `patchId` (`patch:<hex>` o `repair:<hex>`),
+   `sut`, `testClass` y opcionalmente `fields[]`, `methods[]`, etc.
+2. **Bloqueo controlado** — `{ "schemaVersion": 1, "status": "BLOCKED", "blockReason": "..." }`.
+
+Cuando el SDK no soporte schemas, el agente debe igualmente devolver
+**únicamente** el JSON, sin markdown fences ni texto adicional, y el
+patcher rechazará cualquier salida fuera del schema.
+
 ## Patch Descriptor — formato canónico
 
 Todos los JSONs producidos por Body Agent y Repair Agent siguen este esquema.
