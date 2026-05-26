@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -29,6 +30,45 @@ sys.path.insert(0, str(HERE))
 from common import atomic_write_json, fail, load_json, validate  # noqa: E402
 
 SCHEMA_NAME = "context-pack"
+DEFAULT_MAX_IMPORTS = 40
+TOKENS_PER_BYTE = 0.25  # rough estimate: ~4 bytes per token for JSON
+
+# Planner-only fields excluded from compact packs (P2.2).
+_COMPACT_CLASSIFICATION_DROP = {
+    "risk", "score", "reasons", "tags", "loc",
+    "publicMethods", "cyclomatic", "coverage",
+}
+
+
+def _classification_bucket(class_type: str | None) -> tuple[str, str | None]:
+    """Reduce classification.type to a compact (bucket, subtype?) tuple.
+
+    Local-only mapping — does NOT modify classification_analyzer.py.
+    """
+    if not class_type:
+        return ("unknown", None)
+    web = {"controller"}
+    svc = {"service", "component"}
+    data = {"repository", "mapper"}
+    cfg = {"configuration", "config"}
+    inert = {
+        "non-instantiable", "data-carrier", "enum", "dto",
+        "entity", "exception", "util",
+    }
+    excluded = {"generated", "generated/excluded"}
+    if class_type in web:
+        return ("web", class_type)
+    if class_type in svc:
+        return ("svc", class_type)
+    if class_type in data:
+        return ("data", class_type)
+    if class_type in cfg:
+        return ("cfg", class_type)
+    if class_type in inert:
+        return ("inert", class_type)
+    if class_type in excluded:
+        return ("skip", class_type)
+    return (class_type, None)
 
 FORBIDDEN_ACTIONS = [
     "READ_SOURCE_CODE",
@@ -453,6 +493,192 @@ def build_pack(
     return pack
 
 
+# ── Compact pack ──────────────────────────────────────────────────────────────
+
+def _compact_stack(stack: dict) -> list:
+    """Positional tuple: [java, testFw, mockFw, assertFw, springEnabled,
+    namespaceStyle, testVersion?, mockVersion?, springBootVersion?]"""
+    return [
+        stack.get("javaVersion", "unknown"),
+        stack.get("testFramework", "unknown"),
+        stack.get("mockFramework", "unknown"),
+        stack.get("assertFramework", "none"),
+        bool(stack.get("springEnabled", False)),
+        stack.get("namespaceStyle", "none"),
+        stack.get("testVersion", ""),
+        stack.get("mockVersion", ""),
+        stack.get("springBootVersion") or "",
+    ]
+
+
+def _compact_coverage(coverage: dict) -> list[list]:
+    rows: list[list] = []
+    for t in coverage.get("targets", []):
+        rows.append([
+            t.get("targetId", ""),
+            t.get("method", ""),
+            t.get("missedLines", 0),
+            t.get("missedBranches", 0),
+            t.get("branchId"),
+        ])
+    return rows
+
+
+def _compact_imports(allowed: list[str], max_imports: int) -> tuple[Any, bool]:
+    """Return (compactImports, truncated). Prefix-compress when >=3 hits per prefix."""
+    truncated = False
+    items = list(allowed)
+    if len(items) > max_imports:
+        items = items[:max_imports]
+        truncated = True
+
+    buckets: dict[str, list[str]] = {}
+    flat: list[str] = []
+    for fqcn in items:
+        if "." not in fqcn:
+            flat.append(fqcn)
+            continue
+        prefix, leaf = fqcn.rsplit(".", 1)
+        buckets.setdefault(prefix, []).append(leaf)
+
+    qualifying = {p: leaves for p, leaves in buckets.items() if len(leaves) >= 3}
+    if not qualifying:
+        return items, truncated
+
+    prefixes_sorted = sorted(qualifying.keys())
+    leaves_obj: dict[str, list[str]] = {}
+    for idx, prefix in enumerate(prefixes_sorted):
+        leaves_obj[str(idx)] = sorted(qualifying[prefix])
+
+    extras = list(flat)
+    for prefix, leaves in buckets.items():
+        if prefix in qualifying:
+            continue
+        for leaf in leaves:
+            extras.append(f"{prefix}.{leaf}")
+    if extras:
+        leaves_obj["_"] = sorted(extras)
+
+    return {"prefixes": prefixes_sorted, "leaves": leaves_obj}, truncated
+
+
+def build_compact_pack(pack: dict, max_imports: int) -> tuple[dict, bool]:
+    """Project the legible pack into compact shape. Returns (compact, importsTruncated)."""
+    # Build evidence id pool ordered by first appearance (constructors first, then methods).
+    eid_pool: list[str] = []
+    eid_index: dict[str, int] = {}
+
+    def _eid_idx(eid: str) -> int:
+        if eid not in eid_index:
+            eid_index[eid] = len(eid_pool)
+            eid_pool.append(eid)
+        return eid_index[eid]
+
+    ctor_rows: list[list] = []
+    for c in pack.get("constructors", []):
+        params = [
+            [p.get("type", ""), p.get("name")] if p.get("name") else [p.get("type", "")]
+            for p in c.get("params", [])
+        ]
+        ctor_rows.append([_eid_idx(c["evidenceId"]), params])
+
+    meth_rows: list[list] = []
+    for m in pack.get("methods", []):
+        if m.get("usable") is False:
+            continue
+        args = [p.get("type", "") for p in m.get("params", [])]
+        meth_rows.append([
+            _eid_idx(m["evidenceId"]),
+            m.get("name", ""),
+            m.get("returnType", "void"),
+            args,
+        ])
+
+    dep_rows: list[list] = []
+    for d in pack.get("dependencies", []):
+        dep_rows.append([
+            d.get("name", ""),
+            d.get("type", ""),
+            d.get("injection", ""),
+            d.get("instantiationStrategy", "mock"),
+        ])
+
+    fx_rows: list[list] = []
+    for f in pack.get("fixtures", []):
+        fx_rows.append([
+            f.get("id", ""),
+            f.get("type", ""),
+            f.get("strategy", "mock"),
+        ])
+
+    imp, truncated = _compact_imports(pack.get("allowedImports", []), max_imports)
+
+    compact: dict = {
+        "v": 1,
+        "sut": pack["sut"],
+        "m": pack.get("mode", "coverage"),
+        "stk": _compact_stack(pack.get("stack", {})),
+        "cov": _compact_coverage(pack.get("coverage", {})),
+        "ctor": ctor_rows,
+        "meth": meth_rows,
+        "deps": dep_rows,
+        "fx": fx_rows,
+        "imp": imp,
+        "eid": eid_pool,
+    }
+
+    if pack.get("blocked"):
+        compact["blk"] = True
+        compact["br"] = pack.get("blockReason")
+
+    cls = pack.get("classification") or {}
+    cls_filtered = {k: v for k, v in cls.items() if k not in _COMPACT_CLASSIFICATION_DROP}
+    if cls_filtered:
+        bucket, subtype = _classification_bucket(cls_filtered.get("type"))
+        compact["cls"] = [bucket, subtype] if subtype else [bucket]
+
+    spring = pack.get("springStrategy") or {}
+    if spring:
+        compact["spr"] = [spring.get("slice", "none"), spring.get("mockBeans", [])]
+
+    if truncated:
+        compact["tr"] = ["imp"]
+
+    return compact, truncated
+
+
+def _atomic_write_minified(path: Path, data: dict) -> int:
+    """Write minified JSON atomically. Returns byte length written."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    encoded = payload.encode("utf-8")
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("wb") as f:
+        f.write(encoded)
+    import os
+    os.replace(tmp, path)
+    return len(encoded)
+
+
+def _emit_budget(
+    state_dir: Path,
+    sut: str,
+    context_pack_bytes: int,
+    compact_pack_bytes: int,
+    truncated_fields: list[str],
+) -> None:
+    """Write state/_summaries/llm-budget.json atomically (P2.5)."""
+    budget = {
+        "schemaVersion": 1,
+        "sut": sut,
+        "contextPackBytes": context_pack_bytes,
+        "compactPackBytes": compact_pack_bytes,
+        "estimatedTokensIn": int(compact_pack_bytes * TOKENS_PER_BYTE),
+        "truncatedFields": truncated_fields,
+    }
+    atomic_write_json(state_dir / "_summaries" / "llm-budget.json", budget)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -478,10 +704,25 @@ def main() -> int:
         action="store_true",
         help="Print each pack to stdout instead of writing files",
     )
+    ap.add_argument(
+        "--compact",
+        action="store_true",
+        help="In addition to the legible pack, emit a minified compact pack to "
+             "state/context-packs-compact/<safe_fqcn>.json (token-optimised).",
+    )
+    ap.add_argument(
+        "--max-imports",
+        type=int,
+        default=DEFAULT_MAX_IMPORTS,
+        help=f"Maximum number of allowedImports kept in the compact pack "
+             f"(default: {DEFAULT_MAX_IMPORTS}). Truncation is reported via "
+             f"state/_summaries/llm-budget.json.",
+    )
     args = ap.parse_args()
 
     state_dir = Path(args.out).resolve()
     packs_dir = state_dir / "context-packs"
+    compact_dir = state_dir / "context-packs-compact"
     contracts_dir = state_dir / "symbol-contracts"
 
     # ── Load batch plan (required) ────────────────────────────────────────────
@@ -548,13 +789,37 @@ def main() -> int:
             print(f"[WARN] Schema validation failed for {fqcn}: {exc}", file=sys.stderr)
 
         if args.dry_run:
-            import json
             print(f"\n=== context-pack: {fqcn} ===")
             print(json.dumps(pack, ensure_ascii=False, indent=2))
+            if args.compact:
+                compact, truncated = build_compact_pack(pack, args.max_imports)
+                print(f"\n=== context-pack-compact: {fqcn} ===")
+                print(json.dumps(compact, ensure_ascii=False, separators=(",", ":")))
+                if truncated:
+                    print(f"[INFO] imports truncated to {args.max_imports} for {fqcn}", file=sys.stderr)
         else:
             out_path = packs_dir / f"{safe_fqcn(fqcn)}.json"
             atomic_write_json(out_path, pack)
             print(f"[OK] {fqcn} → {out_path.relative_to(state_dir.parent)}")
+
+            if args.compact:
+                compact, truncated = build_compact_pack(pack, args.max_imports)
+                compact_path = compact_dir / f"{safe_fqcn(fqcn)}.json"
+                compact_bytes = _atomic_write_minified(compact_path, compact)
+                print(f"[OK] compact {fqcn} → {compact_path.relative_to(state_dir.parent)}")
+
+                if truncated:
+                    try:
+                        context_pack_bytes = out_path.stat().st_size
+                    except OSError:
+                        context_pack_bytes = 0
+                    _emit_budget(
+                        state_dir=state_dir,
+                        sut=fqcn,
+                        context_pack_bytes=context_pack_bytes,
+                        compact_pack_bytes=compact_bytes,
+                        truncated_fields=["imp"],
+                    )
 
     if errors:
         print(f"\n[FAIL] {errors} pack(s) failed to build.", file=sys.stderr)
