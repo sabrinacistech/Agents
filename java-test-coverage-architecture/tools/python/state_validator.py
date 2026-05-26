@@ -1,4 +1,32 @@
-"""state_validator.py — validate every state JSON against its schema."""
+"""state_validator.py — validate state/*.json against state/_schemas/*.schema.json.
+
+Correcciones implementadas (Correcciones 1 y 2):
+
+  1. Acepta tanto --state como --state-dir (alias). Si se pasan ambos,
+     --state-dir tiene prioridad y se emite un warning.
+
+  2. symbol-contract.schema.json valida state/symbol-contracts/*.json
+     (uno por FQCN), NO state/symbol-contract.json (que no existe y no
+     debe existir). El manifest state/symbol-contracts.json se trata como
+     estado auxiliar.
+
+  3. Archivos state/*.json sin schema asociado se reportan como
+     [INFO] ... has no schema; treated as auxiliary state
+     en lugar de quedar como estados ambiguos o silenciados.
+
+  4. Formato de salida estandarizado:
+       [OK]   state/<file>.json                 — válido
+       [SKIP] <name>.json missing               — schema existe, archivo ausente (runtime)
+       [INFO] state/<file>.json ...             — auxiliar sin schema, o directorio vacío
+       [ERR]  state/<file>.json                 — inválido (schema + razón adjuntos)
+       [WARN] ...                               — advertencia no bloqueante
+       [FAIL] ...                               — error fatal (dependencia faltante, etc.)
+
+Usage:
+    python tools/python/state_validator.py --state state
+    python tools/python/state_validator.py --state-dir state
+    python tools/python/state_validator.py --state state --state-dir state  # warn + use state-dir
+"""
 from __future__ import annotations
 
 import argparse
@@ -8,34 +36,255 @@ from pathlib import Path
 
 from common import SCHEMAS_DIR
 
+# ---------------------------------------------------------------------------
+# Schemas que NO se mapean a state/<name>.json sino que tienen lógica propia.
+# ---------------------------------------------------------------------------
+_SPECIAL_SCHEMAS: frozenset[str] = frozenset({
+    "symbol-contract",   # → valida state/symbol-contracts/*.json
+})
+
+
+# ---------------------------------------------------------------------------
+# Helpers de validación de un único archivo
+# ---------------------------------------------------------------------------
+
+def _validate_file(
+    target: Path,
+    schema: dict,
+    jsonschema,
+) -> tuple[str, str | None]:
+    """Valida `target` contra `schema`.
+
+    Retorna ("OK", None) o ("ERR", mensaje).
+    """
+    try:
+        with target.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except json.JSONDecodeError as exc:
+        return "ERR", f"JSON inválido — {exc}"
+    except OSError as exc:
+        return "ERR", f"no se puede leer — {exc}"
+
+    try:
+        jsonschema.validate(data, schema)
+        return "OK", None
+    except jsonschema.ValidationError as exc:
+        return "ERR", exc.message
+    except jsonschema.SchemaError as exc:
+        return "ERR", f"schema error — {exc.message}"
+
+
+# ---------------------------------------------------------------------------
+# Validación estándar: un schema → state/<name>.json
+# ---------------------------------------------------------------------------
+
+def validate_standard_schemas(
+    schemas_dir: Path,
+    state_dir: Path,
+    jsonschema,
+) -> int:
+    """Valida state/<name>.json para cada *.schema.json (excepto los especiales).
+
+    Retorna 0 si todo OK, 1 si al menos un archivo falla.
+    """
+    rc = 0
+    for schema_file in sorted(schemas_dir.glob("*.schema.json")):
+        name = schema_file.stem.replace(".schema", "")
+        if name in _SPECIAL_SCHEMAS:
+            continue   # manejado por validate_symbol_contracts()
+
+        target = state_dir / f"{name}.json"
+        if not target.exists():
+            # Archivos generados en runtime (pipeline Python) — skip justificado
+            print(f"[SKIP] {name}.json missing (generated at runtime by pipeline)")
+            continue
+
+        try:
+            with schema_file.open("r", encoding="utf-8") as fh:
+                schema = json.load(fh)
+        except Exception as exc:
+            print(
+                f"[ERR]  cannot load schema {schema_file.name}: {exc}",
+                file=sys.stderr,
+            )
+            rc = 1
+            continue
+
+        status, error = _validate_file(target, schema, jsonschema)
+        if status == "OK":
+            print(f"[OK]   state/{target.name}")
+        else:
+            print(
+                f"[ERR]  state/{target.name}\n"
+                f"       schema: state/_schemas/{schema_file.name}\n"
+                f"       reason: {error}",
+                file=sys.stderr,
+            )
+            rc = 1
+
+    return rc
+
+
+# ---------------------------------------------------------------------------
+# Validación especial: symbol-contract.schema.json → state/symbol-contracts/
+# ---------------------------------------------------------------------------
+
+def validate_symbol_contracts(
+    schemas_dir: Path,
+    state_dir: Path,
+    jsonschema,
+) -> int:
+    """Valida cada state/symbol-contracts/<fqcn>.json contra symbol-contract.schema.json.
+
+    - Si el directorio no existe o está vacío → [INFO], sin error.
+    - Si existe algún contrato inválido → [ERR] con detalle, exit 1.
+    - No toca state/symbol-contracts.json (manifest auxiliar, otro archivo).
+    """
+    schema_file = schemas_dir / "symbol-contract.schema.json"
+    contracts_dir = state_dir / "symbol-contracts"
+
+    if not schema_file.exists():
+        print("[INFO] symbol-contract.schema.json not found; skipping contract validation")
+        return 0
+
+    if not contracts_dir.exists() or not contracts_dir.is_dir():
+        print("[INFO] state/symbol-contracts/ directory not found; skipping contract validation")
+        return 0
+
+    contract_files = sorted(contracts_dir.glob("*.json"))
+    if not contract_files:
+        print("[INFO] state/symbol-contracts/ has no contract files yet")
+        return 0
+
+    try:
+        with schema_file.open("r", encoding="utf-8") as fh:
+            schema = json.load(fh)
+    except Exception as exc:
+        print(
+            f"[ERR]  cannot load symbol-contract.schema.json: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    rc = 0
+    ok_count = 0
+    for cf in contract_files:
+        status, error = _validate_file(cf, schema, jsonschema)
+        if status == "OK":
+            print(f"[OK]   state/symbol-contracts/{cf.name}")
+            ok_count += 1
+        else:
+            print(
+                f"[ERR]  state/symbol-contracts/{cf.name}\n"
+                f"       schema: state/_schemas/symbol-contract.schema.json\n"
+                f"       reason: {error}",
+                file=sys.stderr,
+            )
+            rc = 1
+
+    if ok_count > 0 and rc == 0:
+        print(
+            f"[OK]   state/symbol-contracts/ — {ok_count} contract(s) valid"
+        )
+
+    return rc
+
+
+# ---------------------------------------------------------------------------
+# Reporte de archivos auxiliares (sin schema)
+# ---------------------------------------------------------------------------
+
+def report_auxiliary_files(schemas_dir: Path, state_dir: Path) -> None:
+    """Imprime [INFO] para state/*.json sin schema asociado.
+
+    No emite error; solo informa que son estados auxiliares no validados.
+    Ejemplos: symbol-contracts.json (manifest), module-progress.json, telemetry.json.
+    """
+    schema_stems = {
+        sf.stem.replace(".schema", "")
+        for sf in schemas_dir.glob("*.schema.json")
+    }
+    for jf in sorted(state_dir.glob("*.json")):
+        stem = jf.stem
+        if stem in schema_stems:
+            # Ya validado (o en skip justificado) por validate_standard_schemas()
+            continue
+        print(
+            f"[INFO] state/{jf.name} has no schema; treated as auxiliary state"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--state", required=True, help="state dir")
+    ap = argparse.ArgumentParser(
+        description=(
+            "Validate state/*.json against state/_schemas/*.schema.json.\n"
+            "Validates state/symbol-contracts/*.json against symbol-contract.schema.json."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--state",
+        default=None,
+        help="Path to the state directory (e.g. state/)",
+    )
+    ap.add_argument(
+        "--state-dir",
+        dest="state_dir",
+        default=None,
+        help="Alias for --state; takes priority over --state when both are given",
+    )
     args = ap.parse_args()
+
+    # ── Resolver directorio de estado ────────────────────────────────────────
+    if args.state_dir and args.state:
+        print(
+            "[WARN] Both --state and --state-dir supplied; using --state-dir",
+            file=sys.stderr,
+        )
+        raw_dir = args.state_dir
+    elif args.state_dir:
+        raw_dir = args.state_dir
+    elif args.state:
+        raw_dir = args.state
+    else:
+        ap.error("one of --state or --state-dir is required")
+        return 2  # inalcanzable, pero calma a los type-checkers
+
+    state_dir = Path(raw_dir).resolve()
+    if not state_dir.exists():
+        print(
+            f"[FAIL] state directory not found: {state_dir}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # ── Dependencia jsonschema ────────────────────────────────────────────────
     try:
         import jsonschema  # type: ignore
     except ImportError:
-        print("[FAIL] pip install jsonschema", file=sys.stderr)
+        print(
+            "[FAIL] jsonschema not installed — run: pip install jsonschema",
+            file=sys.stderr,
+        )
         return 3
-    state_dir = Path(args.state).resolve()
+
     rc = 0
-    for schema_file in SCHEMAS_DIR.glob("*.schema.json"):
-        name = schema_file.stem.replace(".schema", "")
-        target = state_dir / f"{name}.json"
-        if not target.exists():
-            print(f"[SKIP] {name}.json missing")
-            continue
-        try:
-            with target.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            with schema_file.open("r", encoding="utf-8") as f:
-                schema = json.load(f)
-            jsonschema.validate(data, schema)
-            print(f"[OK]   {target.name}")
-        except Exception as e:
-            print(f"[FAIL] {target.name}: {e}", file=sys.stderr)
-            rc = 1
+
+    # ── 1. Validación estándar: schema → state/<name>.json ───────────────────
+    rc |= validate_standard_schemas(SCHEMAS_DIR, state_dir, jsonschema)
+
+    # ── 2. Validación especial: symbol-contracts/ ─────────────────────────────
+    result = validate_symbol_contracts(SCHEMAS_DIR, state_dir, jsonschema)
+    if result != 0:
+        rc = result
+
+    # ── 3. Archivos auxiliares sin schema ─────────────────────────────────────
+    report_auxiliary_files(SCHEMAS_DIR, state_dir)
+
     return rc
 
 

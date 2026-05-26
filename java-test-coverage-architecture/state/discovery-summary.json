@@ -1,4 +1,6 @@
 {
+  "schemaVersion": 1,
+  "root": ".",
   "modules": [],
   "sourceRoots": [],
   "testRoots": [],
