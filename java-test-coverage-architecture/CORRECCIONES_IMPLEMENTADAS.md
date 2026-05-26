@@ -4,6 +4,125 @@ Historial de correcciones aplicadas a la arquitectura `java-test-coverage-archit
 
 ---
 
+## Partes A.1, A.2, A.3 — Infraestructura determinista del pipeline
+
+**Fecha:** 2026-05-26  
+**Alcance:** `tools/python/stack_profile_detector.py` (nuevo), `tools/python/classification_analyzer.py` (nuevo), `tools/python/run_pipeline.py` (actualizado)
+
+### A.1 — `stack_profile_detector.py`
+
+**Objetivo:** detectar el stack de testing del proyecto Java de forma totalmente determinista
+a partir de los `pom.xml` — sin LLM, sin red, sin suposiciones.
+
+**Detecta por módulo Maven:**
+
+| Campo | Qué detecta |
+|-------|-------------|
+| `test.framework` | JUnit 5 (artifactIds: `junit-jupiter*`, `junit-platform*`, `junit-vintage-engine`) o JUnit 4 (`junit:junit`) |
+| `test.version` | versión de JUnit |
+| `mock.framework` | Mockito (`mockito-core`, `mockito-junit-jupiter`) |
+| `mock.features` | `mockito-inline` (artifactId explícito) · `powermock` (cualquier `powermock-*`) |
+| `assert.framework` | AssertJ (`assertj-core`) → Hamcrest (`hamcrest-*`) → `junit-builtin` |
+| `di.spring` | `spring-test` o `spring-boot-starter-test` |
+| `di.springBoot` | versión de Spring Boot (del parent POM) |
+| `testcontainers` | cualquier `org.testcontainers:*` |
+| `annotationProcessors` | Lombok, FreeBuilder, MapStruct, Immutables, AutoValue |
+| `namespace` | `jakarta` si Spring Boot ≥ 3, `javax` si < 3, `unknown` si indeterminado |
+
+**Herencia:** cada módulo hereda del root POM los ajustes que no define localmente.
+
+**`spring-boot-starter-test`:** implica automáticamente JUnit 5, Mockito y AssertJ.
+
+**Actualización de schema:** agrega retrocompatiblemente `namespace` y `testcontainers`
+al objeto de módulo en `state/_schemas/stack-profile.schema.json` si están ausentes.
+
+**Presets:** genera `presets.imports.allowed` / `presets.imports.forbidden` según namespace.
+
+```bash
+python tools/python/stack_profile_detector.py --repo <repo-java> --out state
+```
+
+### A.2 — `classification_analyzer.py`
+
+**Objetivo:** clasificar clases Java sin LLM usando reglas estáticas sobre anotaciones y metadatos.
+
+**Fuentes de entrada (en orden de preferencia):**
+1. `state/index/classes.json` + `state/index/annotations.json` (post `semantic_index_writer`)
+2. `state/symbol-contracts/*.json` directamente (fallback si el índice está vacío)
+3. `state/generated-code-index.json` — exclusiones
+4. `state/coverage-targets.json` — datos de cobertura (opcional)
+
+**Reglas de clasificación (por prioridad):**
+
+| Prioridad | Condición | Tipo asignado |
+|-----------|-----------|---------------|
+| 1 | FQCN en `excludedFqcns` / `excludedPackages` | `generated/excluded` |
+| 2 | `@RestController`, `@Controller`, `@ControllerAdvice`, `@FeignClient` | `controller` |
+| 3 | `@Service` | `service` |
+| 4 | `@Repository` | `repository` |
+| 5 | `@Component` | `component` |
+| 6 | `@Configuration`, `@SpringBootApplication` | `configuration` |
+| 7 | `@Mapper` | `mapper` |
+| 8 | `kind=interface` o modificador `abstract` | `non-instantiable` |
+| 9 | `kind=record` | `data-carrier` |
+| 10 | `kind=enum` | `enum` |
+| 11 | Sufijo del nombre (`Controller`, `Service`, `Repository`, etc.) | según sufijo |
+| 12 | Ninguna regla aplicó | `component` |
+
+**Clases de test** (sufijo `Test`, `Tests`, `IT`, `Spec`) son ignoradas — no son SUTs.
+
+**Métricas deterministas por clase:**
+
+| Métrica | Valores | Ejemplo |
+|---------|---------|---------|
+| `testabilityRisk` | low · medium · high | `controller` → medium, `configuration` → high |
+| `coverageValue` | low · medium · high | `service` → high, `data-carrier` → low |
+| `recommendedTemplate` | path o null | `controller` → `templates/webmvc-test.java` |
+| `reasons` | array de strings | `["@Service annotation detected"]` |
+
+**Schema:** actualiza retrocompatiblemente `state/_schemas/classification-index.schema.json`
+para incluir todos los tipos nuevos y los campos de métricas.
+
+```bash
+python tools/python/classification_analyzer.py --out state
+python tools/python/classification_analyzer.py --out state --contracts state/symbol-contracts
+```
+
+### A.3 — `run_pipeline.py` actualizado
+
+**Nuevo orden del pipeline (12 pasos):**
+
+```
+ 1. pom_parser              → state/build-tool-contract.json
+ 2. archetype_detector      → state/archetype-profile.json
+ 3. generated_code_scanner  → state/generated-code-index.json
+ 4. classpath_resolver      → state/import-whitelist.json
+ 5. stack_profile_detector  → state/stack-profile.json          ← NUEVO
+ 6. bytecode_scanner        → state/symbol-contracts/<fqcn>.json (si --module)
+ 7. source_symbol_enricher  → enriquece contratos
+ 8. jacoco_parser           → state/coverage-targets.json        (si --jacoco-xml)
+ 9. semantic_index_writer   → state/index/
+10. classification_analyzer → state/classification-index.json    ← NUEVO
+11. incremental_map_writer  → state/incremental-map.json         (si --since)
+12. state_validator         → valida todo
+```
+
+**Nuevas opciones `--skip`:** `stack` y `classification`
+
+### Validación
+
+```
+python -m py_compile tools/python/stack_profile_detector.py
+                     tools/python/classification_analyzer.py
+                     tools/python/run_pipeline.py
+→ ALL SYNTAX OK
+
+python tools/python/state_validator.py --state state
+→ 19 × [OK], exit 0  (ninguna regresión de schema)
+```
+
+---
+
 ## Mejora 3 — Corrección y refuerzo de `.github/copilot-instructions.md`
 
 **Fecha:** 2026-05-26  

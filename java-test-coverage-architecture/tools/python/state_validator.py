@@ -15,9 +15,9 @@ Correcciones implementadas:
      en lugar de quedar como estados ambiguos o silenciados.
 
   4. Archivos ausentes se tratan según su origen:
-       - Escritos por el pipeline Python (steps 1-4, siempre) → [ERR] si faltan.
-       - Escritos condicionalmente por el pipeline Python       → [SKIP] con motivo.
-       - Escritos por agentes LLM (fase posterior al pipeline)  → [SKIP] con motivo.
+       - Escritos por el pipeline Python (steps 1-5, 9-10, siempre) → [ERR] si faltan.
+       - Escritos condicionalmente por el pipeline Python            → [SKIP] con motivo.
+       - Escritos por agentes LLM (fase posterior al pipeline)       → [SKIP] con motivo.
      Solo los archivos verdaderamente runtime/opcionales reciben [SKIP].
 
   5. Formato de salida estandarizado:
@@ -58,29 +58,29 @@ _SPECIAL_SCHEMAS: frozenset[str] = frozenset({
 # Archivos NO listados aquí que tengan schema asociado son REQUERIDOS: el
 # pipeline Python los escribe incondicionalmente y su ausencia es un [ERR].
 # Actualmente eso corresponde a:
-#   build-tool-contract  ← pom_parser.py       (Step 1)
-#   archetype-profile    ← archetype_detector.py (Step 2)
-#   generated-code-index ← generated_code_scanner.py (Step 3)
-#   import-whitelist     ← classpath_resolver.py (Step 4)
+#   build-tool-contract  ← pom_parser.py              (Step  1)
+#   archetype-profile    ← archetype_detector.py       (Step  2)
+#   generated-code-index ← generated_code_scanner.py   (Step  3)
+#   import-whitelist     ← classpath_resolver.py        (Step  4)
+#   stack-profile        ← stack_profile_detector.py    (Step  5)
+#   classification-index ← classification_analyzer.py   (Step 10)
 # ---------------------------------------------------------------------------
 _RUNTIME_OPTIONAL: dict[str, str] = {
     # ── Escritos por agentes LLM (fase posterior al pipeline Python) ──────────
-    "batch-plan":            "written by LLM Planning agent",
-    "classification-index":  "written by LLM Classification agent",
     "compile-error-index":   "written by compile_error_parser when compilation fails",
     "coverage-summary":      "written by jacoco_parser after a JaCoCo run",
     "coverage-delta":        "written by jacoco_parser --mode delta (separate invocation)",
-    "dependency-graph":      "written by LLM Dependency Graph agent",
     "discovery-summary":     "written by LLM Discovery agent",
     "execution-state":       "written by LLM orchestrator",
     "failure-memory":        "written by LLM Repair agent across cycles",
-    "fixture-catalog":       "written by LLM Fixture agent",
     "generated-tests":       "written by LLM Generation agent",
     "mutation-intelligence": "written by LLM Mutation agent",
-    "stack-profile":         "written by LLM Stack Profile agent",
-    # ── Escritos condicionalmente por el pipeline Python ──────────────────────
-    "coverage-targets":      "requires --jacoco-xml flag",
-    "incremental-map":       "requires --since flag",
+    # ── Escritos condicionalmente por el pipeline Python (flags opcionales) ───
+    "coverage-targets":      "requires --jacoco-xml flag (Step 8)",
+    "dependency-graph":      "requires pipeline Step 11; use --skip deps to omit",
+    "fixture-catalog":       "requires pipeline Step 12; use --skip fixtures to omit",
+    "batch-plan":            "requires pipeline Step 13; use --skip planning to omit",
+    "incremental-map":       "requires --since flag (Step 14)",
 }
 
 
