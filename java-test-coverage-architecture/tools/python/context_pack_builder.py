@@ -63,36 +63,69 @@ def load_optional(path: Path) -> Any | None:
 
 # ── Extractors ────────────────────────────────────────────────────────────────
 
-def extract_stack(stack_profile: dict | None) -> dict:
-    """Build minimal stack block from stack-profile.json (first module wins)."""
+def extract_stack(stack_profile: dict | None) -> tuple[dict, bool, str | None]:
+    """Build minimal stack block from stack-profile.json; return (stack, blocked, reason).
+
+    Blocked when the profile is absent or lacks at least one module with confirmed
+    test.framework and mock.framework — no framework defaults are ever assumed.
+    """
+    _MISSING: dict = {
+        "javaVersion": "unknown",
+        "testFramework": "unknown",
+        "mockFramework": "unknown",
+    }
+
     if not stack_profile:
-        return {
-            "javaVersion": "unknown",
-            "testFramework": "junit5",
-            "mockFramework": "mockito",
-        }
+        return _MISSING, True, "stack-profile missing or incomplete"
 
     modules = stack_profile.get("modules", [])
-    mod = modules[0] if modules else {}
+    if not modules:
+        return _MISSING, True, "stack-profile missing or incomplete"
 
+    mod = modules[0]
     test_info = mod.get("test", {})
     mock_info = mod.get("mock", {})
+
+    # A module without explicit framework values is treated as incomplete.
+    if not test_info.get("framework") or not mock_info.get("framework"):
+        return _MISSING, True, "stack-profile missing or incomplete"
+
     assert_info = mod.get("assert", {})
     di_info = mod.get("di", {})
 
-    return {
+    stack: dict = {
         "javaVersion": stack_profile.get("java", "unknown"),
-        "testFramework": test_info.get("framework", "junit5"),
-        "testVersion": test_info.get("version", ""),
-        "mockFramework": mock_info.get("framework", "mockito"),
-        "mockVersion": mock_info.get("version", ""),
-        "assertFramework": assert_info.get("framework", "assertj"),
-        "springEnabled": bool(di_info.get("spring", False)),
-        "springBootVersion": di_info.get("springBoot", None),
-        "springSlices": di_info.get("slices", []),
-        "namespaceStyle": _detect_namespace(stack_profile),
-        "annotationProcessors": mod.get("annotationProcessors", []),
+        "testFramework": test_info.get("framework", "unknown"),
+        "mockFramework": mock_info.get("framework", "unknown"),
     }
+
+    test_version = test_info.get("version", "")
+    if test_version:
+        stack["testVersion"] = test_version
+
+    mock_version = mock_info.get("version", "")
+    if mock_version:
+        stack["mockVersion"] = mock_version
+
+    assert_framework = assert_info.get("framework")
+    stack["assertFramework"] = assert_framework if assert_framework else "none"
+
+    spring = bool(di_info.get("spring", False))
+    stack["springEnabled"] = spring
+    if spring:
+        stack["springBootVersion"] = di_info.get("springBoot")
+        slices = di_info.get("slices", [])
+        if slices:
+            stack["springSlices"] = slices
+
+    namespace = _detect_namespace(stack_profile)
+    stack["namespaceStyle"] = namespace
+
+    processors = mod.get("annotationProcessors", [])
+    if processors:
+        stack["annotationProcessors"] = processors
+
+    return stack, False, None
 
 
 def _detect_namespace(stack_profile: dict) -> str:
@@ -112,13 +145,19 @@ def extract_classification(classification_index: dict | None, fqcn: str) -> dict
         return {}
     for entry in classification_index.get("classes", []):
         if entry.get("fqcn") == fqcn:
-            return {
-                "type": entry.get("type"),
-                "risk": entry.get("risk"),
-                "score": entry.get("score"),
-                "cyclomatic": entry.get("cyclomatic"),
-                "tags": entry.get("tags", []),
-            }
+            result: dict = {}
+            # Include each atomic field only when the value is present (not None).
+            # Exception: recommendedTemplate accepts null in the schema → always include.
+            for key in (
+                "type", "testabilityRisk", "coverageValue", "reasons",
+                "tags", "loc", "publicMethods", "cyclomatic", "coverage",
+                "risk", "score",
+            ):
+                val = entry.get(key)
+                if val is not None:
+                    result[key] = val
+            result["recommendedTemplate"] = entry.get("recommendedTemplate")
+            return result
     return {}
 
 
@@ -265,55 +304,94 @@ def extract_fixtures(
     return relevant
 
 
-def extract_allowed_imports(
-    import_whitelist: dict | None,
-    stack: dict,
-) -> list[str]:
-    """Return a curated list of safe FQCNs the agent may use as imports."""
-    always_allowed = [
-        "org.junit.jupiter.api.Test",
-        "org.junit.jupiter.api.BeforeEach",
-        "org.junit.jupiter.api.AfterEach",
-        "org.junit.jupiter.api.Assertions",
-        "org.junit.jupiter.api.extension.ExtendWith",
-        "org.junit.Test",
-        "org.junit.Before",
-        "org.junit.After",
-        "org.mockito.Mockito",
-        "org.mockito.Mock",
-        "org.mockito.InjectMocks",
-        "org.mockito.junit.jupiter.MockitoExtension",
-        "org.mockito.junit.MockitoJUnitRunner",
-        "org.assertj.core.api.Assertions",
-        "org.hamcrest.MatcherAssert",
-        "org.hamcrest.Matchers",
-        "java.util.Optional",
-        "java.util.List",
-        "java.util.Map",
-        "java.util.Set",
-        "java.util.Arrays",
-        "java.util.Collections",
-    ]
+def _framework_imports_from_stack(stack: dict) -> set[str]:
+    """Map confirmed stack capabilities to allowed import FQCNs (minimum privilege).
 
-    if stack.get("springEnabled"):
-        always_allowed += [
+    No framework package is included unless its corresponding stack flag is
+    explicitly confirmed — 'unknown' or 'none' values contribute nothing.
+    """
+    imports: set[str] = set()
+
+    test_fw = stack.get("testFramework", "unknown")
+    mock_fw = stack.get("mockFramework", "unknown")
+    assert_fw = stack.get("assertFramework", "unknown")
+    spring = bool(stack.get("springEnabled", False))
+
+    if test_fw == "junit5":
+        imports.update({
+            "org.junit.jupiter.api.Test",
+            "org.junit.jupiter.api.BeforeEach",
+            "org.junit.jupiter.api.AfterEach",
+            "org.junit.jupiter.api.Assertions",
+            "org.junit.jupiter.api.extension.ExtendWith",
+        })
+    elif test_fw == "junit4":
+        imports.update({
+            "org.junit.Test",
+            "org.junit.Before",
+            "org.junit.After",
+        })
+
+    if mock_fw == "mockito":
+        imports.update({
+            "org.mockito.Mockito",
+            "org.mockito.Mock",
+            "org.mockito.InjectMocks",
+        })
+        if test_fw == "junit5":
+            imports.add("org.mockito.junit.jupiter.MockitoExtension")
+        elif test_fw == "junit4":
+            imports.add("org.mockito.junit.MockitoJUnitRunner")
+
+    if assert_fw == "assertj":
+        imports.add("org.assertj.core.api.Assertions")
+    elif assert_fw == "hamcrest":
+        imports.update({
+            "org.hamcrest.MatcherAssert",
+            "org.hamcrest.Matchers",
+        })
+
+    if spring:
+        imports.update({
             "org.springframework.boot.test.context.SpringBootTest",
             "org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest",
             "org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest",
             "org.springframework.boot.test.mock.mockito.MockBean",
             "org.springframework.test.web.servlet.MockMvc",
             "org.springframework.beans.factory.annotation.Autowired",
-        ]
+        })
 
-    # Add project-local allowed FQCNs from the whitelist (source + dep origin only)
+    return imports
+
+
+def extract_allowed_imports(
+    import_whitelist: dict | None,
+    stack: dict,
+    baseline_presets: list[str] | None = None,
+) -> list[str]:
+    """Return allowed FQCNs under minimum-privilege: stack-confirmed frameworks + whitelist.
+
+    JDK standard-library classes (java.util.*, java.time.*, java.math.*, …) are
+    admitted only when they appear explicitly in import-whitelist.json with origin
+    'jdk', or when listed in the architecture baseline presets (stack_profile
+    presets.imports.allowed).  They are never added unconditionally.
+    """
+    allowed: set[str] = _framework_imports_from_stack(stack)
+
+    # Project-local (source/dep) and explicitly approved JDK classes from the whitelist.
     if import_whitelist:
         for entry in import_whitelist.get("classes", []):
-            if entry.get("origin") in ("source", "dep"):
-                fqcn = entry.get("fqcn", "")
-                if fqcn and fqcn not in always_allowed:
-                    always_allowed.append(fqcn)
+            origin = entry.get("origin", "")
+            fqcn = entry.get("fqcn", "")
+            if fqcn and origin in ("source", "dep", "jdk"):
+                allowed.add(fqcn)
 
-    return sorted(set(always_allowed))
+    # Global exception rules parsed from the architecture baseline configuration
+    # (stack_profile.presets.imports.allowed).
+    if baseline_presets:
+        allowed.update(baseline_presets)
+
+    return sorted(allowed)
 
 
 # ── Pack builder ──────────────────────────────────────────────────────────────
@@ -331,14 +409,21 @@ def build_pack(
     symbol_contracts_dir: Path,
 ) -> dict:
     """Assemble the minimal context-pack for one SUT."""
-    stack = extract_stack(stack_profile)
+    stack, blocked, block_reason = extract_stack(stack_profile)
     classification = extract_classification(classification_index, fqcn)
     coverage = extract_coverage(coverage_targets, fqcn, batch_items)
     constructors, methods = extract_symbol_contract(symbol_contracts_dir, fqcn)
     deps_raw, collab_usage, spring_strategy = extract_dependencies(dependency_graph, fqcn)
     dependencies = enrich_deps_with_strategy(deps_raw, fixture_catalog)
     fixtures = extract_fixtures(fixture_catalog, deps_raw, batch_items, fqcn)
-    allowed_imports = extract_allowed_imports(import_whitelist, stack)
+
+    baseline_presets: list[str] | None = None
+    if stack_profile:
+        raw_presets = stack_profile.get("presets", {}).get("imports.allowed")
+        if isinstance(raw_presets, list):
+            baseline_presets = raw_presets or None
+
+    allowed_imports = extract_allowed_imports(import_whitelist, stack, baseline_presets)
 
     pack: dict = {
         "schemaVersion": 1,
@@ -354,6 +439,10 @@ def build_pack(
         "allowedImports": allowed_imports,
         "forbidden": FORBIDDEN_ACTIONS,
     }
+
+    if blocked:
+        pack["blocked"] = True
+        pack["blockReason"] = block_reason
 
     if classification:
         pack["classification"] = classification
@@ -428,7 +517,7 @@ def main() -> int:
     import_whitelist = load_optional(state_dir / "import-whitelist.json")
 
     if not stack_profile:
-        print("[WARN] stack-profile.json missing — stack block will use defaults", file=sys.stderr)
+        print("[WARN] stack-profile.json missing — context packs will be marked blocked", file=sys.stderr)
 
     # ── Build and write one pack per SUT ─────────────────────────────────────
     errors = 0
