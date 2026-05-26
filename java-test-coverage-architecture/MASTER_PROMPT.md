@@ -58,10 +58,25 @@ Escritura atómica: escribir `*.tmp` y luego `rename`. `execution-state.json` re
 - Clasificación de clases, análisis de cobertura, priorización ROI
 - **Escritura física de archivos Java** (exclusivamente vía `test_patch_applier.py`)
 
-**Agentes LLM** ejecutan exclusivamente:
-- Inferir bodies de métodos de test desde el context-pack
-- Sintetizar reparaciones ante errores de compilación normalizados
+**Agentes LLM** operan de forma **reactiva**, procesando únicamente abstracciones generadas previamente por el toolkit analítico de Python:
+- Inferir bodies de métodos de test desde el context-pack (producen **esquemas JSON estructurados** — no archivos Java completos)
+- Inferir parches correctivos JSON basados en errores de compilación normalizados
 - Nunca invocan `javap`, nunca leen POM, nunca leen JaCoCo XML directamente
+
+### Tabla de correspondencias herramienta ↔ responsabilidad
+
+| Tarea | Responsable | Artefacto de salida |
+|-------|-------------|---------------------|
+| Classification | `tools/python/classification_analyzer.py` | `state/classification-index.json` |
+| Dependency Graph | `tools/python/dependency_graph_extractor.py` | `state/dependency-graph.json` |
+| Fixture Catalog | `tools/python/fixture_catalog_builder.py` | `state/fixture-catalog.json` |
+| Planning | `tools/python/coverage_planner.py` | `state/batch-plan.json` |
+| Context Packs | `tools/python/context_pack_builder.py` | `state/context-packs/<fqcn>.json` |
+| Generation | Agentes LLM | Esquemas estructurados JSON (no archivos Java completos) |
+| Patch Application | `tools/python/test_patch_applier.py` | Mutación física de archivos Java en disco |
+| Validation | `tools/python/test_linter.py` | Pre-compilado estático (static pre-compile linter) |
+| Compile Error Normalization | `tools/python/compile_error_parser.py` | `state/compile-error-index.json` |
+| Repair | Agentes LLM | Parches correctivos JSON basados en errores normalizados |
 
 Ver: `docs/deterministic-architecture.md`, `docs/token-minimization-strategy.md`, `docs/agent-json-protocol.md`.
 
@@ -140,25 +155,25 @@ Lectura de `state/build-tool-contract.json`, `state/archetype-profile.json` y `s
 Detectar versiones exactas y dirigir presets: JUnit 4/5, Mockito 2/3/4/5, AssertJ, Hamcrest, Spring/Spring Boot Test, Testcontainers, Lombok, FreeBuilder, MapStruct, Immutables, AutoValue.
 
 ### 3. Classification
-Clasificar clases según testabilidad, riesgo, criticidad, tipo, potencial de cobertura.
+Leer `state/classification-index.json` producido por `tools/python/classification_analyzer.py`. No re-clasificar — el agente consume la clasificación como dato de entrada.
 
 ### 4. Symbol Contract
 Generar un contrato por SUT en `state/symbol-contracts/<fqcn>.json` con `evidence-id` por símbolo. Construir además `state/import-whitelist.json` con todos los paquetes/clases admisibles (classpath + JDK + source roots + generated sources).
 
 ### 5. Dependency Graph
-Mapear DI real (constructor/field/setter), colaboradores, repositorios, clientes, mappers, puertos, adapters y **excepciones declaradas por método** (para tests negativos).
+Leer `state/dependency-graph.json` producido por `tools/python/dependency_graph_extractor.py`. No re-mapear dependencias — el agente consume el grafo como dato de entrada.
 
 ### 6. Fixture Catalog
-Builders/constructors/factories verificados. Indicar `required`, `optional`, `defaults`, `cycleSafe`. Mock pasivo solo como fallback.
+Leer `state/fixture-catalog.json` producido por `tools/python/fixture_catalog_builder.py`. No re-generar el catálogo — el agente consume los fixtures verificados como dato de entrada.
 
 ### 7. Planning
-Leer `target/site/jacoco/jacoco.xml` (LINE/BRANCH/INSTRUCTION/CXTY/METHOD), cruzar con clasificación. Ramificar por modo: `coverage` prioriza líneas, `branch-coverage` prioriza ramas, `mutation-hardening` prioriza clases con sobrevivientes PIT.
+Leer `state/batch-plan.json` producido por `tools/python/coverage_planner.py`. No re-planificar — el agente consume el plan como dato de entrada. El planner ya cruzó JaCoCo XML con la clasificación y priorizó por modo (`coverage`, `branch-coverage`, `mutation-hardening`).
 
 ### 8. Generation
-Generar tests usando solo contratos. Cada test embebe en comentario los `evidence-id` consumidos.
+Consumir `state/context-packs/<fqcn>.json` producido por `tools/python/context_pack_builder.py` y generar el patch descriptor JSON estructurado. Los agentes LLM producen **esquemas JSON** (no archivos Java completos); la escritura física en disco es exclusiva de `test_patch_applier.py`. Cada método embebe en `evidenceIds` los IDs de los contratos consumidos.
 
 ### 9. Validation
-- Linter AST sobre el test propuesto (gate G6) antes de compilar.
+- static pre-compile linter (`tools/python/test_linter.py`) sobre el test propuesto (gate G6) antes de compilar.
 - Narrow runner: `mvn -pl <módulo> -am -Dtest=<FQCN> -DfailIfNoTests=false -Djacoco.destFile=target/jacoco-batch-<n>.exec test`.
 - Parseo de errores estructurado a `state/compile-error-index.json`.
 
@@ -177,7 +192,7 @@ Ningún ciclo puede avanzar si un gate falla.
 - **G3 Bytecode-first**: si `target/classes` existe, los contratos se derivan de bytecode; AST solo como fallback documentado.
 - **G4 Generated sources**: si hay annotation processors detectados, `target/generated-sources` debe existir y estar indexado antes de Symbol Contract.
 - **G5 Stack profile**: generación bloqueada hasta que `state/stack-profile.json` declare framework de test, mocking, assertion lib y DI con versiones.
-- **G6 Linter pre-compile**: AST del test propuesto valida 100% de símbolos contra whitelist/contratos. Falla ⇒ descarte sin gastar build.
+- **G6 Linter pre-compile**: static pre-compile linter (`tools/python/test_linter.py`) valida 100% de símbolos contra whitelist/contratos. Falla ⇒ descarte sin gastar build.
 - **G7 Failure memory**: `hash(errorCode, symbolFQN, fixId)` previamente fallido ⇒ fix prohibido.
 - **G8 Convergencia**: 2 ciclos consecutivos con `coverageDelta == 0` o `compileFailRate > 0.5` ⇒ abortar y reportar.
 - **G9 VS Code/Copilot diagnostics**: errores JDT como `The import X cannot be resolved`, `Cannot instantiate the type X` o `The method m is undefined for the type T` se normalizan en `compile-error-index.json` y se reparan solo con whitelist/contrato; nunca por inferencia libre.

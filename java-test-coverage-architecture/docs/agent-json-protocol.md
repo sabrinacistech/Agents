@@ -6,6 +6,10 @@ Define el formato de intercambio entre los agentes LLM y `test_patch_applier.py`
 Los agentes producen JSONs estructurados; el patcher los materializa en Java.
 Ningún agente escribe archivos Java directamente.
 
+Tanto el Body Agent (`test-body-agent`) como el Repair Agent (`repair-agent`) producen
+el mismo patch descriptor canónico. La única distinción es el prefijo del `patchId`:
+`patch:` para generación inicial, `repair:` para reparación (con el campo adicional `repairOf`).
+
 ---
 
 ## Patch Descriptor — formato canónico
@@ -125,6 +129,26 @@ Ejemplos: `testDoFoo_happyPath`, `testDoFoo_throwsWhenNull`, `testDoFoo_emptyRes
 
 **Regla**: cada símbolo en `body` (`new X()`, `x.method()`, `X.static()`) debe
 tener un `evidence-id` correspondiente en `evidenceIds[]`.
+
+**Restricciones de contenido de `body`**: el campo `body` contiene **únicamente** el
+cuerpo interno del método. Se prohíbe explícitamente incluir:
+- Sentencias `import` o cláusulas `package`
+- Declaraciones de clase: `public class`, `class`, `interface`, `enum`
+El patcher rechaza cualquier patch con estas construcciones dentro de `body`.
+
+---
+
+## Contrato de bloqueo
+
+Cuando un agente no puede generar un patch válido por indeterminación técnica o falta
+de datos críticos, devuelve el contrato de bloqueo:
+
+```json
+{ "schemaVersion": 1, "status": "BLOCKED", "blockReason": "<razón detallada>" }
+```
+
+El orchestrator lee `status == "BLOCKED"` y registra el caso en `state/failure-memory.json`
+sin invocar al patcher. El `blockReason` debe identificar el símbolo o dato faltante.
 
 ---
 
