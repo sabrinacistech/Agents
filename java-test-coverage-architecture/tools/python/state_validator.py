@@ -1,6 +1,6 @@
 """state_validator.py — validate state/*.json against state/_schemas/*.schema.json.
 
-Correcciones implementadas (Correcciones 1 y 2):
+Correcciones implementadas:
 
   1. Acepta tanto --state como --state-dir (alias). Si se pasan ambos,
      --state-dir tiene prioridad y se emite un warning.
@@ -14,11 +14,17 @@ Correcciones implementadas (Correcciones 1 y 2):
      [INFO] ... has no schema; treated as auxiliary state
      en lugar de quedar como estados ambiguos o silenciados.
 
-  4. Formato de salida estandarizado:
+  4. Archivos ausentes se tratan según su origen:
+       - Escritos por el pipeline Python (steps 1-4, siempre) → [ERR] si faltan.
+       - Escritos condicionalmente por el pipeline Python       → [SKIP] con motivo.
+       - Escritos por agentes LLM (fase posterior al pipeline)  → [SKIP] con motivo.
+     Solo los archivos verdaderamente runtime/opcionales reciben [SKIP].
+
+  5. Formato de salida estandarizado:
        [OK]   state/<file>.json                 — válido
-       [SKIP] <name>.json missing               — schema existe, archivo ausente (runtime)
+       [SKIP] <name>.json — <motivo>            — ausente pero legítimamente opcional
        [INFO] state/<file>.json ...             — auxiliar sin schema, o directorio vacío
-       [ERR]  state/<file>.json                 — inválido (schema + razón adjuntos)
+       [ERR]  state/<file>.json                 — inválido o faltante cuando era requerido
        [WARN] ...                               — advertencia no bloqueante
        [FAIL] ...                               — error fatal (dependencia faltante, etc.)
 
@@ -42,6 +48,40 @@ from common import SCHEMAS_DIR
 _SPECIAL_SCHEMAS: frozenset[str] = frozenset({
     "symbol-contract",   # → valida state/symbol-contracts/*.json
 })
+
+# ---------------------------------------------------------------------------
+# Estados runtime/opcionales: ausentes no es un error.
+#
+# Cada entrada mapea el nombre del schema (sin extensión) a la razón por la
+# que su archivo de estado puede estar ausente legítimamente.
+#
+# Archivos NO listados aquí que tengan schema asociado son REQUERIDOS: el
+# pipeline Python los escribe incondicionalmente y su ausencia es un [ERR].
+# Actualmente eso corresponde a:
+#   build-tool-contract  ← pom_parser.py       (Step 1)
+#   archetype-profile    ← archetype_detector.py (Step 2)
+#   generated-code-index ← generated_code_scanner.py (Step 3)
+#   import-whitelist     ← classpath_resolver.py (Step 4)
+# ---------------------------------------------------------------------------
+_RUNTIME_OPTIONAL: dict[str, str] = {
+    # ── Escritos por agentes LLM (fase posterior al pipeline Python) ──────────
+    "batch-plan":            "written by LLM Planning agent",
+    "classification-index":  "written by LLM Classification agent",
+    "compile-error-index":   "written by compile_error_parser when compilation fails",
+    "coverage-summary":      "written by jacoco_parser after a JaCoCo run",
+    "coverage-delta":        "written by jacoco_parser --mode delta (separate invocation)",
+    "dependency-graph":      "written by LLM Dependency Graph agent",
+    "discovery-summary":     "written by LLM Discovery agent",
+    "execution-state":       "written by LLM orchestrator",
+    "failure-memory":        "written by LLM Repair agent across cycles",
+    "fixture-catalog":       "written by LLM Fixture agent",
+    "generated-tests":       "written by LLM Generation agent",
+    "mutation-intelligence": "written by LLM Mutation agent",
+    "stack-profile":         "written by LLM Stack Profile agent",
+    # ── Escritos condicionalmente por el pipeline Python ──────────────────────
+    "coverage-targets":      "requires --jacoco-xml flag",
+    "incremental-map":       "requires --since flag",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +135,14 @@ def validate_standard_schemas(
 
         target = state_dir / f"{name}.json"
         if not target.exists():
-            # Archivos generados en runtime (pipeline Python) — skip justificado
-            print(f"[SKIP] {name}.json missing (generated at runtime by pipeline)")
+            if name in _RUNTIME_OPTIONAL:
+                print(f"[SKIP] {name}.json — {_RUNTIME_OPTIONAL[name]}")
+            else:
+                print(
+                    f"[ERR]  state/{name}.json — missing; must be produced by the Python pipeline",
+                    file=sys.stderr,
+                )
+                rc = 1
             continue
 
         try:

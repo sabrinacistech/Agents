@@ -4,6 +4,83 @@ Historial de correcciones aplicadas a la arquitectura `java-test-coverage-archit
 
 ---
 
+## Corrección 3 — Distinción entre [SKIP] legítimo y [ERR] por ausencia requerida
+
+**Fecha:** 2026-05-26  
+**Alcance:** `tools/python/state_validator.py`
+
+### Problema
+
+`validate_standard_schemas()` trataba **cualquier** archivo de estado ausente como
+`[SKIP] <name>.json missing (generated at runtime by pipeline)`, sin distinción.
+Esto ocultaba fallos reales: si el pipeline Python no producía `import-whitelist.json`
+(por ejemplo, por un error en `classpath_resolver.py`), el validador lo ignoraba
+silenciosamente en lugar de fallar.
+
+### Solución: `_RUNTIME_OPTIONAL` dict
+
+Se introdujo un diccionario `_RUNTIME_OPTIONAL` que mapea cada nombre de schema a la
+razón por la que su archivo puede estar ausente legítimamente:
+
+```python
+_RUNTIME_OPTIONAL: dict[str, str] = {
+    # Escritos por agentes LLM (fase posterior al pipeline Python)
+    "batch-plan":            "written by LLM Planning agent",
+    "classification-index":  "written by LLM Classification agent",
+    "compile-error-index":   "written by compile_error_parser when compilation fails",
+    "coverage-summary":      "written by jacoco_parser after a JaCoCo run",
+    "coverage-delta":        "written by jacoco_parser --mode delta (separate invocation)",
+    "dependency-graph":      "written by LLM Dependency Graph agent",
+    "discovery-summary":     "written by LLM Discovery agent",
+    "execution-state":       "written by LLM orchestrator",
+    "failure-memory":        "written by LLM Repair agent across cycles",
+    "fixture-catalog":       "written by LLM Fixture agent",
+    "generated-tests":       "written by LLM Generation agent",
+    "mutation-intelligence": "written by LLM Mutation agent",
+    "stack-profile":         "written by LLM Stack Profile agent",
+    # Escritos condicionalmente por el pipeline Python
+    "coverage-targets":      "requires --jacoco-xml flag",
+    "incremental-map":       "requires --since flag",
+}
+```
+
+**Archivos ausentes en `_RUNTIME_OPTIONAL`** → `[SKIP] <name>.json — <motivo>`  
+**Archivos ausentes fuera del dict** → `[ERR]  state/<name>.json — missing; must be produced by the Python pipeline` + exit 1
+
+### Archivos requeridos (no están en `_RUNTIME_OPTIONAL`)
+
+| Archivo | Escrito por | Step |
+|---------|-------------|------|
+| `build-tool-contract.json` | `pom_parser.py` | Step 1 |
+| `archetype-profile.json` | `archetype_detector.py` | Step 2 |
+| `generated-code-index.json` | `generated_code_scanner.py` | Step 3 |
+| `import-whitelist.json` | `classpath_resolver.py` | Step 4 |
+
+### Resultados de validación
+
+**Test A — repo completo (todos los archivos presentes):**
+```
+python tools/python/state_validator.py --state state
+# 19 × [OK], 0 × [SKIP], EXIT CODE: 0
+```
+
+**Test B — post-pipeline Python (solo 4 obligatorios presentes):**
+```
+# Solo: build-tool-contract, archetype-profile, generated-code-index, import-whitelist
+python tools/python/state_validator.py --state /tmp/test-state-dir
+# 4 × [OK], 15 × [SKIP] con motivo específico, EXIT CODE: 0
+```
+
+**Test C — falta un archivo obligatorio (`import-whitelist.json`):**
+```
+rm /tmp/test-state-dir/import-whitelist.json
+python tools/python/state_validator.py --state /tmp/test-state-dir
+# [ERR]  state/import-whitelist.json — missing; must be produced by the Python pipeline
+# EXIT CODE: 1
+```
+
+---
+
 ## Correcciones 1 y 2 — Validación de estados y symbol contracts
 
 **Fecha:** 2026-05-25  
