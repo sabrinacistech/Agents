@@ -81,6 +81,8 @@ python tools/python/run_pipeline.py \
 
 **Si cualquiera de estos JSON falta o no valida contra su schema ⇒ abortar con `BLOCKED_PRE_STAGE_MISSING`.** Los agentes nunca leen POMs, classpath crudo, `javap` ni `jacoco.xml` directamente: consumen solo los JSON.
 
+> Los `state/*.json` **no se versionan**. El directorio queda con un `.gitkeep` y los esquemas en `state/_schemas/`. `run_pipeline.py` los crea (escritura atómica `*.tmp` + rename) en el primer ciclo. Ver `.gitignore`.
+
 ---
 
 ## Reglas duras

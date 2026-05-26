@@ -4,14 +4,13 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Estado generado por el pipeline (artefactos de ejecución, no código fuente)
+# Estado generado por el pipeline (artefactos de ejecución, no código fuente).
+# Todos los state/*.json los crea run_pipeline.py o sus sub-scripts; preservamos
+# state/_schemas/, state/index/README.md y state/.gitkeep.
+state/*.json
 state/_patches/
 state/context-packs/
 state/symbol-contracts/
-state/generated-tests.json
-state/compile-error-index.json
-state/execution-state.json
-state/failure-memory.json
 
 # Entornos virtuales locales
 .venv/
