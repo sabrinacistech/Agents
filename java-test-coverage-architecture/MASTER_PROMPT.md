@@ -80,30 +80,14 @@ Escritura atómica: escribir `*.tmp` y luego `rename`. `execution-state.json` re
 
 Ver: `docs/deterministic-architecture.md`, `docs/token-minimization-strategy.md`, `docs/agent-json-protocol.md`.
 
-## Phase 0 - Python pre-stage (obligatorio)
+## Phase 0 — Python pre-stage
 
-Antes de cualquier agente LLM debe correr el pipeline Python una vez por commit relevante (POM o `target/classes` cambiado):
+El bootstrap operativo (cómo invocar el pipeline, auto-detección de parámetros, modos `standalone` vs `embebido`) vive en `BOOT.md`. Este documento describe únicamente el **contrato técnico** que el pre-stage debe cumplir:
 
-```bash
-# ── Modo standalone (VS Code abierto en java-test-coverage-architecture/) ──
-mvn -q -DskipTests package
-python tools/python/run_pipeline.py \
-   --repo <ruta-al-repo-java> \
-   --out state \
-   --module <module> \
-   --include-fqcn '^com\.acme\.' \
-   --jacoco-xml <ruta-al-repo-java>/target/site/jacoco/jacoco.xml
-
-# ── Modo embebido (arquitectura en docs/agents/java-test-coverage-architecture/) ──
-# python docs/agents/java-test-coverage-architecture/tools/python/run_pipeline.py \
-#    --repo . \
-#    --out docs/agents/java-test-coverage-architecture/state \
-#    --module <module> \
-#    --include-fqcn '^com\.acme\.' \
-#    --jacoco-xml target/site/jacoco/jacoco.xml
-```
-
-Produce `build-tool-contract.json`, `archetype-profile.json`, `generated-code-index.json`, `import-whitelist.json`, `symbol-contracts/<fqcn>.json` y, si hay JaCoCo, `coverage-targets.json`. Los agentes leen solo estos JSON; no relectura de POM, classpath ni javap. Si falta cualquier archivo ⇒ `BLOCKED_PRE_STAGE_MISSING`.
+- Antes de cualquier agente LLM, debe existir el conjunto de estados precomputados (ver lista en `Estados obligatorios`).
+- Cada estado debe validar contra su JSON Schema en `state/_schemas/`.
+- Si falta cualquier archivo obligatorio ⇒ abortar con `BLOCKED_PRE_STAGE_MISSING`.
+- Los agentes nunca releen POMs, classpath crudo ni `jacoco.xml`: consumen solo los JSON.
 
 ## Phase 0b - Aplicación de Parches (post-LLM, obligatorio)
 

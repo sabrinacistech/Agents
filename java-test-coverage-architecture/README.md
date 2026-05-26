@@ -77,10 +77,12 @@ Para ejecutar desde Visual Studio Code, usar la guía [`docs/vscode-copilot-exec
 
 ## Cómo arrancar
 
-1. Leer la [Guía del Desarrollador](docs/developer-guide.md).
-2. Leer `MASTER_PROMPT.md`.
-3. Correr el pre-stage Python (`tools/python/run_pipeline.py`).
-4. Ejecutar Orchestrator con `mode` y `budget` pegando `Prompt_inicial.md` en el chat.
+1. Leer [`BOOT.md`](BOOT.md) — punto único de entrada (parámetros, Phase 0, reglas duras, procedimiento).
+2. Leer `MASTER_PROMPT.md` — contrato técnico (gates G1–G9, schemas, división del trabajo).
+3. Correr el pre-stage Python con auto-detección: `python tools/python/bootstrap.py --repo <ruta>`. Para overrides manuales, invocar `tools/python/run_pipeline.py` directamente.
+4. Ejecutar Orchestrator con `mode` y `budget` pegando `BOOT.md` en el chat (o cargándolo desde el agente).
 5. Validar cada test generado con `tools/python/test_linter.py` antes de compilar.
 6. Inspeccionar `state/execution-state.json` y los `state/_summaries/cycle-*.json` para progreso.
 7. Reporte final emitido por `reporting-agent`.
+
+Para detalles operativos del día a día, ver [`docs/developer-guide.md`](docs/developer-guide.md).

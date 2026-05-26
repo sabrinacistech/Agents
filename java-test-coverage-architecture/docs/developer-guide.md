@@ -90,7 +90,7 @@ Si algo falta o falla la validación de schema, abortar y revisar. No avanzar al
 ## 4. Lanzar el agente desde el chat de Copilot
 
 1. Abrir el chat de Copilot en VS Code.
-2. Pegar el contenido completo de [Prompt_inicial.md](Prompt_inicial.md) en el chat.
+2. Pegar el contenido completo de [BOOT.md](BOOT.md) en el chat.
 3. Antes de enviar, completar los parámetros:
    - `repo: <ruta-del-microservicio>`
    - `modules: all` o lista
@@ -172,7 +172,7 @@ Si `writeTests: false`, los tests están en el reporte. Para aplicarlos, repetir
 ## 11. Archivos clave de referencia
 
 - [MASTER_PROMPT.md](MASTER_PROMPT.md) — reglas del orquestador y gates G1–G8.
-- [Prompt_inicial.md](Prompt_inicial.md) — prompt de arranque para pegar en el chat.
+- [BOOT.md](BOOT.md) — punto único de arranque (Phase 0, parámetros, reglas duras, procedimiento).
 - [docs/python-pipeline.md](docs/python-pipeline.md) — frontera LLM ↔ Python.
 - [docs/performance-tuning.md](docs/performance-tuning.md) — optimizaciones contra ciclos largos.
 - [docs/archetype-policy.md](docs/archetype-policy.md) — reglas BGBA `paas-java-8` / `paas-java-21`.
@@ -190,7 +190,7 @@ Si `writeTests: false`, los tests están en el reporte. Para aplicarlos, repetir
 [ ] (opcional) mvn -q test jacoco:report
 [ ] python run_pipeline.py --repo . --out <state> --module <m> --include-fqcn '^com\.acme\.'
 [ ] Verificar state/*.json y state/symbol-contracts/
-[ ] Pegar Prompt_inicial.md en el chat con parámetros
+[ ] Pegar BOOT.md en el chat con parámetros
 [ ] Avanzar fase por fase; al fallar un gate, leer la tabla del punto 9
 [ ] Revisar reporte final de reporting-agent
 [ ] Si writeTests:true, validar diff y correr mvn test
