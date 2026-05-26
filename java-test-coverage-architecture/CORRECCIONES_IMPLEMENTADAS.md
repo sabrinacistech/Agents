@@ -4,7 +4,124 @@ Historial de correcciones aplicadas a la arquitectura `java-test-coverage-archit
 
 ---
 
-## Corrección 3 — Distinción entre [SKIP] legítimo y [ERR] por ausencia requerida
+## Mejora 3 — Corrección y refuerzo de `.github/copilot-instructions.md`
+
+**Fecha:** 2026-05-26  
+**Alcance:** `.github/copilot-instructions.md`, `docs/vscode-copilot-execution-guide.md`
+
+### Problemas corregidos
+
+#### 1. Comando del linter incorrecto
+
+**Antes:**
+```bash
+python tools/python/test_linter.py --file <path/to/TestFile.java> \
+  --whitelist state/import-whitelist.json \
+  --contracts state/symbol-contracts/
+```
+
+**Después:**
+```bash
+python tools/python/test_linter.py \
+  --test-file <path/to/TestFile.java> \
+  --whitelist state/import-whitelist.json \
+  --contracts state/symbol-contracts/ \
+  --stack-profile state/stack-profile.json
+```
+
+`--file` no existe en `test_linter.py` (el argumento real es `--test-file`).  
+`--stack-profile` es el objetivo arquitectónico para G5; incluye NOTE indicando que
+la implementación en `test_linter.py` es una mejora pendiente (mejora 9).
+
+#### 2. "AST linter" → "static pre-compile linter"
+
+`test_linter.py` usa regex, no un AST real. Eliminada toda referencia a "AST linter":
+- Sección "REQUIRED BEFORE ACCEPTING A SUGGESTION"
+- Gate G6 en la tabla de referencia
+- Pie de página del documento
+
+#### 3. Reglas FreeBuilder explícitas
+
+Agregadas reglas que antes estaban implícitas o ausentes:
+
+| Prohibición | Razón |
+|-------------|-------|
+| `new TypeName_Builder()` | Clase generada interna; no debe usarse directamente |
+| `new TypeName_Builder(...)` | Ídem |
+| Setters inventados (`.setPersonCommonData(...)`, etc.) | Solo los de `builders[].setters[]` del contrato son válidos |
+
+La única forma permitida de FreeBuilder: `new TypeName.Builder()` y solo si el contrato lo confirma.
+
+#### 4. Reglas de framework según `state/stack-profile.json` (G5)
+
+Tabla explícita agregada con 8 combinaciones:
+
+| Framework / feature | Condición en stack-profile.json |
+|---------------------|----------------------------------|
+| JUnit 5 (`org.junit.jupiter.*`) | JUnit 5 declarado |
+| JUnit 4 (`org.junit.*`) | JUnit 4 declarado |
+| `@Mock`, `MockitoExtension` | Mockito disponible |
+| `Mockito.mockStatic(...)` | `mockito-inline` disponible |
+| PowerMock | PowerMock disponible |
+| `@SpringBootTest` | Spring Test disponible |
+| `javax.*` | Namespace `javax` (no `jakarta`) |
+| `jakarta.*` | Namespace `jakarta` (no `javax`) |
+| AssertJ / Hamcrest | Listado como dependencia permitida |
+
+#### 5. Aclaración de `state/symbol-contracts.json` como manifest
+
+Agregado en la tabla "WHERE TO LOOK FOR VALID SYMBOLS":
+
+> `state/symbol-contracts.json` ← manifest only; no method defs
+
+Y en la regla 2: aclaración explícita de que los contratos reales están en
+`state/symbol-contracts/<fqcn>.json`, no en el manifest.
+
+#### 6. `state/stack-profile.json` en la tabla de lookup
+
+Agregada la fila:
+
+| Available frameworks | `state/stack-profile.json` → declared deps, `presets` |
+
+#### 7. Sección "CORRECTIVE PATTERNS" ampliada
+
+Se añadieron tres patrones nuevos documentados con ✅/❌:
+- Import no whitelisted
+- FreeBuilder `_Builder` vs `.Builder()`
+- Setter inventado
+- Framework no disponible en el stack
+
+### Validación
+
+Todos los criterios de aceptación verificados programáticamente:
+
+| Criterio | Resultado |
+|----------|-----------|
+| No contiene `--file <path` | ✅ 0 matches |
+| No contiene `AST linter` | ✅ 0 matches |
+| No contiene `symbol-contract.json` (singular) | ✅ 0 matches |
+| Contiene `--test-file` | ✅ 2 matches |
+| Contiene `--stack-profile state/stack-profile.json` | ✅ 1 match |
+| Contiene `symbol-contracts/<fqcn>.json` | ✅ 11 matches |
+| Contiene `manifest` | ✅ 2 matches |
+| Contiene `static pre-compile linter` | ✅ 2 matches |
+| Contiene `stack-profile.json` (regla G5) | ✅ 11 matches |
+| Contiene `_Builder` (prohibición) | ✅ 5 matches |
+| G6 con "pre-compile linter passes before compile" | ✅ 1 match |
+| `builders[].setters[]` (setters rule) | ✅ 5 matches |
+| `mockito-inline` (mock inline rule) | ✅ 2 matches |
+| `javax`/`jakarta` rule | ✅ 3 matches |
+
+### Pendientes detectados
+
+- **Mejora 9 pendiente:** `test_linter.py` no implementa aún `--stack-profile`.
+  Debe agregarse para que G5 (stack profile declared) sea validado en tiempo de lint.
+  Hasta entonces, el flag está documentado como objetivo y el NOTE indica cómo
+  ejecutar sin él temporalmente.
+
+---
+
+## Corrección 3 (anterior) — Distinción entre [SKIP] legítimo y [ERR] por ausencia requerida
 
 **Fecha:** 2026-05-26  
 **Alcance:** `tools/python/state_validator.py`

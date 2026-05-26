@@ -29,14 +29,26 @@ python docs/agents/java-test-coverage-architecture/tools/python/run_pipeline.py 
 ```
 
 4. Pedir a Copilot que trabaje solo sobre un SUT y un test por vez.
-5. Antes de aceptar cambios, ejecutar el linter:
+5. Antes de aceptar cambios, ejecutar el pre-compile linter:
 
 ```bash
 python docs/agents/java-test-coverage-architecture/tools/python/test_linter.py \
   --test-file <ruta-del-test-generado>.java \
   --whitelist docs/agents/java-test-coverage-architecture/state/import-whitelist.json \
-  --contracts docs/agents/java-test-coverage-architecture/state/symbol-contracts
+  --contracts docs/agents/java-test-coverage-architecture/state/symbol-contracts \
+  --stack-profile docs/agents/java-test-coverage-architecture/state/stack-profile.json
 ```
+
+> **NOTA:** `--stack-profile` es requerido por la arquitectura para validación completa de G5
+> (frameworks disponibles según el stack real del proyecto).
+> Si la versión local de `test_linter.py` aún no soporta este flag, ejecutar sin él
+> temporalmente hasta completar la mejora 9 (integración de stack-profile en el linter):
+> ```bash
+> python docs/agents/java-test-coverage-architecture/tools/python/test_linter.py \
+>   --test-file <ruta-del-test-generado>.java \
+>   --whitelist docs/agents/java-test-coverage-architecture/state/import-whitelist.json \
+>   --contracts docs/agents/java-test-coverage-architecture/state/symbol-contracts
+> ```
 
 6. Recién después ejecutar Maven en scope angosto:
 
