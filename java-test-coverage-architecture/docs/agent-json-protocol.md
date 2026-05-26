@@ -15,7 +15,7 @@ el mismo patch descriptor canónico. La única distinción es el prefijo del `pa
 ## Response Format Hint (schema-constrained output)
 
 El JSON Schema canónico del Patch Descriptor vive en
-[`state/_schemas/patch-descriptor.schema.json`](../state/_schemas/patch-descriptor.schema.json) y debe declararse como
+[`state/_schemas/protocols/patch-descriptor.schema.json`](../state/_schemas/protocols/patch-descriptor.schema.json) y debe declararse como
 **response format hint** en cualquier integración LLM (Anthropic
 `tools` con `input_schema`, OpenAI structured outputs, JSON-mode con
 schema, etc.).

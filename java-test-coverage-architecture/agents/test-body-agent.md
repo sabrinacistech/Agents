@@ -3,7 +3,7 @@
 ## Response Format
 
 Tu respuesta DEBE ser un único objeto JSON válido contra
-`state/_schemas/patch-descriptor.schema.json`. Sin texto adicional,
+`state/_schemas/protocols/patch-descriptor.schema.json`. Sin texto adicional,
 sin markdown fences, sin comentarios fuera del JSON.
 
 ## Rol
