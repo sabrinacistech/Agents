@@ -1,560 +1,237 @@
-# Correcciones Implementadas
+# CORRECCIONES_IMPLEMENTADAS
 
-Historial de correcciones aplicadas a la arquitectura `java-test-coverage-architecture`.
-
----
-
-## Partes A.1, A.2, A.3 — Infraestructura determinista del pipeline
-
-**Fecha:** 2026-05-26  
-**Alcance:** `tools/python/stack_profile_detector.py` (nuevo), `tools/python/classification_analyzer.py` (nuevo), `tools/python/run_pipeline.py` (actualizado)
-
-### A.1 — `stack_profile_detector.py`
-
-**Objetivo:** detectar el stack de testing del proyecto Java de forma totalmente determinista
-a partir de los `pom.xml` — sin LLM, sin red, sin suposiciones.
-
-**Detecta por módulo Maven:**
-
-| Campo | Qué detecta |
-|-------|-------------|
-| `test.framework` | JUnit 5 (artifactIds: `junit-jupiter*`, `junit-platform*`, `junit-vintage-engine`) o JUnit 4 (`junit:junit`) |
-| `test.version` | versión de JUnit |
-| `mock.framework` | Mockito (`mockito-core`, `mockito-junit-jupiter`) |
-| `mock.features` | `mockito-inline` (artifactId explícito) · `powermock` (cualquier `powermock-*`) |
-| `assert.framework` | AssertJ (`assertj-core`) → Hamcrest (`hamcrest-*`) → `junit-builtin` |
-| `di.spring` | `spring-test` o `spring-boot-starter-test` |
-| `di.springBoot` | versión de Spring Boot (del parent POM) |
-| `testcontainers` | cualquier `org.testcontainers:*` |
-| `annotationProcessors` | Lombok, FreeBuilder, MapStruct, Immutables, AutoValue |
-| `namespace` | `jakarta` si Spring Boot ≥ 3, `javax` si < 3, `unknown` si indeterminado |
-
-**Herencia:** cada módulo hereda del root POM los ajustes que no define localmente.
-
-**`spring-boot-starter-test`:** implica automáticamente JUnit 5, Mockito y AssertJ.
-
-**Actualización de schema:** agrega retrocompatiblemente `namespace` y `testcontainers`
-al objeto de módulo en `state/_schemas/stack-profile.schema.json` si están ausentes.
-
-**Presets:** genera `presets.imports.allowed` / `presets.imports.forbidden` según namespace.
-
-```bash
-python tools/python/stack_profile_detector.py --repo <repo-java> --out state
-```
-
-### A.2 — `classification_analyzer.py`
-
-**Objetivo:** clasificar clases Java sin LLM usando reglas estáticas sobre anotaciones y metadatos.
-
-**Fuentes de entrada (en orden de preferencia):**
-1. `state/index/classes.json` + `state/index/annotations.json` (post `semantic_index_writer`)
-2. `state/symbol-contracts/*.json` directamente (fallback si el índice está vacío)
-3. `state/generated-code-index.json` — exclusiones
-4. `state/coverage-targets.json` — datos de cobertura (opcional)
-
-**Reglas de clasificación (por prioridad):**
-
-| Prioridad | Condición | Tipo asignado |
-|-----------|-----------|---------------|
-| 1 | FQCN en `excludedFqcns` / `excludedPackages` | `generated/excluded` |
-| 2 | `@RestController`, `@Controller`, `@ControllerAdvice`, `@FeignClient` | `controller` |
-| 3 | `@Service` | `service` |
-| 4 | `@Repository` | `repository` |
-| 5 | `@Component` | `component` |
-| 6 | `@Configuration`, `@SpringBootApplication` | `configuration` |
-| 7 | `@Mapper` | `mapper` |
-| 8 | `kind=interface` o modificador `abstract` | `non-instantiable` |
-| 9 | `kind=record` | `data-carrier` |
-| 10 | `kind=enum` | `enum` |
-| 11 | Sufijo del nombre (`Controller`, `Service`, `Repository`, etc.) | según sufijo |
-| 12 | Ninguna regla aplicó | `component` |
-
-**Clases de test** (sufijo `Test`, `Tests`, `IT`, `Spec`) son ignoradas — no son SUTs.
-
-**Métricas deterministas por clase:**
-
-| Métrica | Valores | Ejemplo |
-|---------|---------|---------|
-| `testabilityRisk` | low · medium · high | `controller` → medium, `configuration` → high |
-| `coverageValue` | low · medium · high | `service` → high, `data-carrier` → low |
-| `recommendedTemplate` | path o null | `controller` → `templates/webmvc-test.java` |
-| `reasons` | array de strings | `["@Service annotation detected"]` |
-
-**Schema:** actualiza retrocompatiblemente `state/_schemas/classification-index.schema.json`
-para incluir todos los tipos nuevos y los campos de métricas.
-
-```bash
-python tools/python/classification_analyzer.py --out state
-python tools/python/classification_analyzer.py --out state --contracts state/symbol-contracts
-```
-
-### A.3 — `run_pipeline.py` actualizado
-
-**Nuevo orden del pipeline (12 pasos):**
-
-```
- 1. pom_parser              → state/build-tool-contract.json
- 2. archetype_detector      → state/archetype-profile.json
- 3. generated_code_scanner  → state/generated-code-index.json
- 4. classpath_resolver      → state/import-whitelist.json
- 5. stack_profile_detector  → state/stack-profile.json          ← NUEVO
- 6. bytecode_scanner        → state/symbol-contracts/<fqcn>.json (si --module)
- 7. source_symbol_enricher  → enriquece contratos
- 8. jacoco_parser           → state/coverage-targets.json        (si --jacoco-xml)
- 9. semantic_index_writer   → state/index/
-10. classification_analyzer → state/classification-index.json    ← NUEVO
-11. incremental_map_writer  → state/incremental-map.json         (si --since)
-12. state_validator         → valida todo
-```
-
-**Nuevas opciones `--skip`:** `stack` y `classification`
-
-### Validación
-
-```
-python -m py_compile tools/python/stack_profile_detector.py
-                     tools/python/classification_analyzer.py
-                     tools/python/run_pipeline.py
-→ ALL SYNTAX OK
-
-python tools/python/state_validator.py --state state
-→ 19 × [OK], exit 0  (ninguna regresión de schema)
-```
+**Fecha de ejecución:** 2026-05-26 09:34  
+**Entorno Python:** 3.14.5  
+**Commit de referencia:** 93b1613 — *Depuración de MASTER_PROMPT.md*  
+**Rama:** main  
+**Archivos modificados:** 4  
 
 ---
 
-## Mejora 3 — Corrección y refuerzo de `.github/copilot-instructions.md`
+## 1. Evidencia de compilación limpia — `python -m py_compile tools/python/*.py`
 
-**Fecha:** 2026-05-26  
-**Alcance:** `.github/copilot-instructions.md`, `docs/vscode-copilot-execution-guide.md`
-
-### Problemas corregidos
-
-#### 1. Comando del linter incorrecto
-
-**Antes:**
-```bash
-python tools/python/test_linter.py --file <path/to/TestFile.java> \
-  --whitelist state/import-whitelist.json \
-  --contracts state/symbol-contracts/
+```
+$ python -m py_compile tools/python/*.py
+ALL_CLEAN   (exit code: 0)
+Scripts analizados: 24
 ```
 
-**Después:**
-```bash
-python tools/python/test_linter.py \
-  --test-file <path/to/TestFile.java> \
-  --whitelist state/import-whitelist.json \
-  --contracts state/symbol-contracts/ \
-  --stack-profile state/stack-profile.json
-```
+| Script | Estado |
+|--------|--------|
+| `archetype_detector.py` | OK |
+| `ast_patcher.py` | OK |
+| `bytecode_scanner.py` | OK |
+| `classpath_resolver.py` | OK |
+| `classification_analyzer.py` | OK |
+| `common.py` | OK |
+| `compile_error_parser.py` | OK |
+| `context_pack_builder.py` | OK |
+| `coverage_planner.py` | OK |
+| `cycle_summarizer.py` | OK |
+| `dependency_graph_extractor.py` | OK |
+| `fixture_catalog_builder.py` | OK |
+| `generated_code_scanner.py` | OK |
+| `incremental_map_writer.py` | OK |
+| `jacoco_parser.py` | OK |
+| `pom_parser.py` | OK |
+| `run_pipeline.py` | OK |
+| `semantic_index_writer.py` | OK |
+| `source_symbol_enricher.py` | OK |
+| `stack_profile_detector.py` | OK |
+| `stacktrace.py` | OK |
+| `state_validator.py` | OK |
+| `test_linter.py` | OK |
+| `test_patch_applier.py` | OK |
 
-`--file` no existe en `test_linter.py` (el argumento real es `--test-file`).  
-`--stack-profile` es el objetivo arquitectónico para G5; incluye NOTE indicando que
-la implementación en `test_linter.py` es una mejora pendiente (mejora 9).
+Sin errores de sintaxis ni de importación en ninguno de los 24 módulos.
 
-#### 2. "AST linter" → "static pre-compile linter"
+---
 
-`test_linter.py` usa regex, no un AST real. Eliminada toda referencia a "AST linter":
-- Sección "REQUIRED BEFORE ACCEPTING A SUGGESTION"
-- Gate G6 en la tabla de referencia
-- Pie de página del documento
+## 2. Verificación de interfaces CLI (`--help`)
 
-#### 3. Reglas FreeBuilder explícitas
+Scripts referenciados en la tabla de correspondencias de `MASTER_PROMPT.md`.  
+Todos retornan exit code 0 con línea de uso válida.
 
-Agregadas reglas que antes estaban implícitas o ausentes:
+| Script | Primera línea de `--help` | Exit |
+|--------|--------------------------|------|
+| `classification_analyzer.py` | `usage: classification_analyzer.py [-h] --out OUT [--contracts CONTRACTS]` | 0 |
+| `dependency_graph_extractor.py` | `usage: dependency_graph_extractor.py [-h] --out OUT [--contracts CONTRACTS]` | 0 |
+| `fixture_catalog_builder.py` | `usage: fixture_catalog_builder.py [-h] --out OUT [--contracts CONTRACTS]` | 0 |
+| `coverage_planner.py` | `usage: coverage_planner.py [-h] --out OUT [--batch-size ...] [--mode ...]` | 0 |
+| `context_pack_builder.py` | `usage: context_pack_builder.py [-h] --out OUT [--sut SUT] [--dry-run]` | 0 |
+| `test_patch_applier.py` | `usage: test_patch_applier.py [-h] --patch PATH --repo DIR [--state DIR] ...` | 0 |
+| `test_linter.py` | `usage: test_linter.py [-h] --test-file PATH --whitelist PATH ...` | 0 |
+| `compile_error_parser.py` | `usage: compile_error_parser.py [-h] --log PATH --out PATH [--run ID] ...` | 0 |
+| `run_pipeline.py` | `usage: run_pipeline.py [-h] --repo REPO --out OUT [--module MODULE] ...` | 0 |
 
-| Prohibición | Razón |
-|-------------|-------|
-| `new TypeName_Builder()` | Clase generada interna; no debe usarse directamente |
-| `new TypeName_Builder(...)` | Ídem |
-| Setters inventados (`.setPersonCommonData(...)`, etc.) | Solo los de `builders[].setters[]` del contrato son válidos |
+---
 
-La única forma permitida de FreeBuilder: `new TypeName.Builder()` y solo si el contrato lo confirma.
+## 3. Estado detallado de cumplimiento — Criterios de aceptación arquitectónicos
 
-#### 4. Reglas de framework según `state/stack-profile.json` (G5)
+### Corrección 1 — Refactorización del protocolo de agentes
 
-Tabla explícita agregada con 8 combinaciones:
-
-| Framework / feature | Condición en stack-profile.json |
-|---------------------|----------------------------------|
-| JUnit 5 (`org.junit.jupiter.*`) | JUnit 5 declarado |
-| JUnit 4 (`org.junit.*`) | JUnit 4 declarado |
-| `@Mock`, `MockitoExtension` | Mockito disponible |
-| `Mockito.mockStatic(...)` | `mockito-inline` disponible |
-| PowerMock | PowerMock disponible |
-| `@SpringBootTest` | Spring Test disponible |
-| `javax.*` | Namespace `javax` (no `jakarta`) |
-| `jakarta.*` | Namespace `jakarta` (no `javax`) |
-| AssertJ / Hamcrest | Listado como dependencia permitida |
-
-#### 5. Aclaración de `state/symbol-contracts.json` como manifest
-
-Agregado en la tabla "WHERE TO LOOK FOR VALID SYMBOLS":
-
-> `state/symbol-contracts.json` ← manifest only; no method defs
-
-Y en la regla 2: aclaración explícita de que los contratos reales están en
-`state/symbol-contracts/<fqcn>.json`, no en el manifest.
-
-#### 6. `state/stack-profile.json` en la tabla de lookup
-
-Agregada la fila:
-
-| Available frameworks | `state/stack-profile.json` → declared deps, `presets` |
-
-#### 7. Sección "CORRECTIVE PATTERNS" ampliada
-
-Se añadieron tres patrones nuevos documentados con ✅/❌:
-- Import no whitelisted
-- FreeBuilder `_Builder` vs `.Builder()`
-- Setter inventado
-- Framework no disponible en el stack
-
-### Validación
-
-Todos los criterios de aceptación verificados programáticamente:
+#### 1.1 Eliminación del esquema obsoleto `bodyLines`
 
 | Criterio | Resultado |
 |----------|-----------|
-| No contiene `--file <path` | ✅ 0 matches |
-| No contiene `AST linter` | ✅ 0 matches |
-| No contiene `symbol-contract.json` (singular) | ✅ 0 matches |
-| Contiene `--test-file` | ✅ 2 matches |
-| Contiene `--stack-profile state/stack-profile.json` | ✅ 1 match |
-| Contiene `symbol-contracts/<fqcn>.json` | ✅ 11 matches |
-| Contiene `manifest` | ✅ 2 matches |
-| Contiene `static pre-compile linter` | ✅ 2 matches |
-| Contiene `stack-profile.json` (regla G5) | ✅ 11 matches |
-| Contiene `_Builder` (prohibición) | ✅ 5 matches |
-| G6 con "pre-compile linter passes before compile" | ✅ 1 match |
-| `builders[].setters[]` (setters rule) | ✅ 5 matches |
-| `mockito-inline` (mock inline rule) | ✅ 2 matches |
-| `javax`/`jakarta` rule | ✅ 3 matches |
+| `bodyLines` eliminado de `test-body-agent.md` | **CUMPLIDO** — grep devuelve NONE |
+| `requiredImports` / `requiredFields` eliminados de `test-body-agent.md` | **CUMPLIDO** |
+| `fixKind` / `patches[oldValue/newValue]` eliminados de `repair-agent.md` | **CUMPLIDO** |
+| `bodyLines` ausente en toda la carpeta `prompts/` y `docs/` | **CUMPLIDO** |
 
-### Pendientes detectados
+#### 1.2 Nuevo esquema de salida nativo de `test_patch_applier.py`
 
-- **Mejora 9 pendiente:** `test_linter.py` no implementa aún `--stack-profile`.
-  Debe agregarse para que G5 (stack profile declared) sea validado en tiempo de lint.
-  Hasta entonces, el flag está documentado como objetivo y el NOTE indica cómo
-  ejecutar sin él temporalmente.
+Ambos agentes producen ahora el patch descriptor canónico:
+
+```
+test-body-agent.md  →  patchId: "patch:<id>"
+repair-agent.md     →  patchId: "repair:<id>"  +  repairOf: "<originalPatchId>"
+```
+
+Campos verificados presentes en los schemas de salida de ambos agentes:
+
+| Campo | test-body-agent | repair-agent |
+|-------|----------------|--------------|
+| `schemaVersion` | ✓ | ✓ |
+| `patchId` | `patch:<id>` | `repair:<id>` |
+| `repairOf` | — | ✓ |
+| `sut` | ✓ | ✓ |
+| `testClass` | ✓ | ✓ |
+| `targetModule` | ✓ | ✓ |
+| `targetDir` | ✓ | ✓ |
+| `template` | ✓ | ✓ |
+| `allowedImports` | ✓ | ✓ |
+| `fields[].name/type/annotation` | ✓ | ✓ |
+| `methods[].name/annotations/body/evidenceIds` | ✓ | ✓ |
+
+#### 1.3 Reglas duras — Prohibición de construcciones Java en `methods[].body`
+
+Texto canónico insertado en **ambos** agentes (línea exacta en archivo):
+
+- `test-body-agent.md:97` — `**PROHIBIDO** dentro de body: sentencias import, cláusulas package, declaraciones public class, class, interface o enum.`
+- `repair-agent.md:136` — idem
+
+Prohibición también presente en **Prohibiciones absolutas** de cada agente:
+
+- `test-body-agent.md` — `NUNCA insertes sentencias import, cláusulas package o declaraciones de clase (...) dentro del texto de methods[].body.`
+- `repair-agent.md` — idem
+
+#### 1.4 Restricción de tipos en `fields[]`
+
+Regla presente en **Prohibiciones absolutas** y en **Reglas de `fields[]`** de ambos agentes:
+
+> Solo tipos validados en `contextPack.dependencies`, `contextPack.sut` o el catálogo de fixtures entregado.
+
+#### 1.5 Contrato de bloqueo controlado
+
+| Elemento | Archivo | Línea |
+|----------|---------|-------|
+| Schema `{ "schemaVersion": 1, "status": "BLOCKED", "blockReason": "..." }` | `test-body-agent.md` | 87 |
+| Schema `{ "schemaVersion": 1, "status": "BLOCKED", "blockReason": "..." }` | `repair-agent.md` | 102 |
+| Activación automática ante indeterminación técnica | `test-body-agent.md` | sección "Caso de bloqueo" |
+| Activación por anti-loop (≥2 ciclos FAILED o >3 intentos) | `repair-agent.md` | 129–130 |
+| Ciclo de vida: registro en `state/failure-memory.json` sin invocar al patcher | `docs/agent-json-protocol.md` | 150–151 |
+
+#### 1.6 `docs/agent-json-protocol.md` — Actualizaciones de protocolo
+
+| Cambio | Estado |
+|--------|--------|
+| Clarificación de que Body Agent y Repair Agent usan el mismo formato canónico | **CUMPLIDO** |
+| Nueva sección "Contrato de bloqueo" con ciclo de vida del objeto BLOCKED | **CUMPLIDO** |
+| Restricciones explícitas de `body` en la sección `methods[]` | **CUMPLIDO** |
+| `repairOf` documentado como campo del repair patch | Preexistente — preservado |
 
 ---
 
-## Corrección 3 (anterior) — Distinción entre [SKIP] legítimo y [ERR] por ausencia requerida
+### Corrección 7 — Depuración filosófica de `MASTER_PROMPT.md`
 
-**Fecha:** 2026-05-26  
-**Alcance:** `tools/python/state_validator.py`
+#### 7.1 Tabla de correspondencias herramienta ↔ responsabilidad
 
-### Problema
+Insertada en la sección **División absoluta del trabajo** (líneas 68–81):
 
-`validate_standard_schemas()` trataba **cualquier** archivo de estado ausente como
-`[SKIP] <name>.json missing (generated at runtime by pipeline)`, sin distinción.
-Esto ocultaba fallos reales: si el pipeline Python no producía `import-whitelist.json`
-(por ejemplo, por un error en `classpath_resolver.py`), el validador lo ignoraba
-silenciosamente en lugar de fallar.
+| Tarea declarada | Herramienta asignada | Artefacto de salida |
+|-----------------|---------------------|---------------------|
+| Classification | `tools/python/classification_analyzer.py` | `state/classification-index.json` |
+| Dependency Graph | `tools/python/dependency_graph_extractor.py` | `state/dependency-graph.json` |
+| Fixture Catalog | `tools/python/fixture_catalog_builder.py` | `state/fixture-catalog.json` |
+| Planning | `tools/python/coverage_planner.py` | `state/batch-plan.json` |
+| Context Packs | `tools/python/context_pack_builder.py` | `state/context-packs/<fqcn>.json` |
+| Generation | Agentes LLM | Esquemas estructurados JSON (no archivos Java completos) |
+| Patch Application | `tools/python/test_patch_applier.py` | Mutación física de archivos Java en disco |
+| Validation | `tools/python/test_linter.py` | Pre-compilado estático (static pre-compile linter) |
+| Compile Error Normalization | `tools/python/compile_error_parser.py` | `state/compile-error-index.json` |
+| Repair | Agentes LLM | Parches correctivos JSON basados en errores normalizados |
 
-### Solución: `_RUNTIME_OPTIONAL` dict
+**Verificación:** `grep` retorna 10 coincidencias en la tabla + 5 en las fases operativas.
 
-Se introdujo un diccionario `_RUNTIME_OPTIONAL` que mapea cada nombre de schema a la
-razón por la que su archivo puede estar ausente legítimamente:
+#### 7.2 Reescritura de fases con rol imperativo del LLM → rol reactivo
 
-```python
-_RUNTIME_OPTIONAL: dict[str, str] = {
-    # Escritos por agentes LLM (fase posterior al pipeline Python)
-    "batch-plan":            "written by LLM Planning agent",
-    "classification-index":  "written by LLM Classification agent",
-    "compile-error-index":   "written by compile_error_parser when compilation fails",
-    "coverage-summary":      "written by jacoco_parser after a JaCoCo run",
-    "coverage-delta":        "written by jacoco_parser --mode delta (separate invocation)",
-    "dependency-graph":      "written by LLM Dependency Graph agent",
-    "discovery-summary":     "written by LLM Discovery agent",
-    "execution-state":       "written by LLM orchestrator",
-    "failure-memory":        "written by LLM Repair agent across cycles",
-    "fixture-catalog":       "written by LLM Fixture agent",
-    "generated-tests":       "written by LLM Generation agent",
-    "mutation-intelligence": "written by LLM Mutation agent",
-    "stack-profile":         "written by LLM Stack Profile agent",
-    # Escritos condicionalmente por el pipeline Python
-    "coverage-targets":      "requires --jacoco-xml flag",
-    "incremental-map":       "requires --since flag",
-}
+| Fase | Antes (LLM como ejecutor) | Después (LLM como consumidor) |
+|------|--------------------------|-------------------------------|
+| 3 — Classification | `Clasificar clases según testabilidad, riesgo...` | `Leer state/classification-index.json producido por classification_analyzer.py` |
+| 5 — Dependency Graph | `Mapear DI real (constructor/field/setter)...` | `Leer state/dependency-graph.json producido por dependency_graph_extractor.py` |
+| 6 — Fixture Catalog | `Builders/constructors/factories verificados...` | `Leer state/fixture-catalog.json producido por fixture_catalog_builder.py` |
+| 7 — Planning | `Leer target/site/jacoco/jacoco.xml, cruzar con clasificación...` | `Leer state/batch-plan.json producido por coverage_planner.py` |
+| 8 — Generation | `Generar tests usando solo contratos` | `Consumir context-packs/<fqcn>.json (...) producen esquemas JSON (no archivos Java completos)` |
+
+**Verificación:** `grep -n "Leer.*producido por" MASTER_PROMPT.md` → 4 coincidencias (fases 3, 5, 6, 7).
+
+#### 7.3 Barrido de "AST linter" / "Linter AST" → "static pre-compile linter"
+
+| Ocurrencia original | Ubicación | Texto reemplazado |
+|--------------------|-----------|-------------------|
+| `Linter AST sobre el test propuesto (gate G6)...` | Fase 9, línea 176 | `static pre-compile linter (tools/python/test_linter.py) sobre el test propuesto...` |
+| `AST del test propuesto valida 100% de símbolos...` | Gate G6, línea 195 | `static pre-compile linter (tools/python/test_linter.py) valida 100% de símbolos...` |
+| Tabla de correspondencias | Línea 77 | `Pre-compilado estático (static pre-compile linter)` |
+
+**Verificación:**
+
+```
+$ grep -n "AST linter|Linter AST" MASTER_PROMPT.md
+(sin resultados)
+
+$ grep -n "static pre-compile linter" MASTER_PROMPT.md
+77:  Pre-compilado estático (static pre-compile linter)
+176: static pre-compile linter (tools/python/test_linter.py) sobre el test propuesto...
+195: static pre-compile linter (tools/python/test_linter.py) valida 100% de símbolos...
 ```
 
-**Archivos ausentes en `_RUNTIME_OPTIONAL`** → `[SKIP] <name>.json — <motivo>`  
-**Archivos ausentes fuera del dict** → `[ERR]  state/<name>.json — missing; must be produced by the Python pipeline` + exit 1
+**Nota de preservación:** La referencia `AST solo como fallback documentado` en el gate **G3** no fue alterada. Esa cláusula describe la precedencia de análisis de bytecode vs. AST para resolución de símbolos del contrato SUT — no el linter — conforme a la excepción explícita indicada en los criterios de aceptación.
 
-### Archivos requeridos (no están en `_RUNTIME_OPTIONAL`)
+#### 7.4 Preservación de reglas anti-alucinación
 
-| Archivo | Escrito por | Step |
-|---------|-------------|------|
-| `build-tool-contract.json` | `pom_parser.py` | Step 1 |
-| `archetype-profile.json` | `archetype_detector.py` | Step 2 |
-| `generated-code-index.json` | `generated_code_scanner.py` | Step 3 |
-| `import-whitelist.json` | `classpath_resolver.py` | Step 4 |
-
-### Resultados de validación
-
-**Test A — repo completo (todos los archivos presentes):**
 ```
-python tools/python/state_validator.py --state state
-# 19 × [OK], 0 × [SKIP], EXIT CODE: 0
+$ grep -c "G[1-9]" MASTER_PROMPT.md
+12   (9 definiciones de gates + 3 referencias cruzadas)
 ```
 
-**Test B — post-pipeline Python (solo 4 obligatorios presentes):**
-```
-# Solo: build-tool-contract, archetype-profile, generated-code-index, import-whitelist
-python tools/python/state_validator.py --state /tmp/test-state-dir
-# 4 × [OK], 15 × [SKIP] con motivo específico, EXIT CODE: 0
-```
-
-**Test C — falta un archivo obligatorio (`import-whitelist.json`):**
-```
-rm /tmp/test-state-dir/import-whitelist.json
-python tools/python/state_validator.py --state /tmp/test-state-dir
-# [ERR]  state/import-whitelist.json — missing; must be produced by the Python pipeline
-# EXIT CODE: 1
-```
+| Gate | Estado |
+|------|--------|
+| G1 Import whitelist | **PRESERVADO** — sin alteración |
+| G2 Symbol evidence | **PRESERVADO** — sin alteración |
+| G3 Bytecode-first | **PRESERVADO** — nota AST-fallback intacta |
+| G4 Generated sources | **PRESERVADO** — sin alteración |
+| G5 Stack profile | **PRESERVADO** — sin alteración |
+| G6 Linter pre-compile | **PRESERVADO + ACTUALIZADO** — texto corregido a "static pre-compile linter" |
+| G7 Failure memory | **PRESERVADO** — sin alteración |
+| G8 Convergencia | **PRESERVADO** — sin alteración |
+| G9 VS Code/Copilot diagnostics | **PRESERVADO** — sin alteración |
 
 ---
 
-## Correcciones 1 y 2 — Validación de estados y symbol contracts
-
-**Fecha:** 2026-05-25  
-**Alcance:** `state/*.json`, `state/_schemas/*.schema.json`, `tools/python/state_validator.py`
-
----
-
-### Corrección 1 — Cobertura completa de schemas y archivos de estado
-
-**Problema:** Varios archivos `state/*.json` no tenían schema asociado en `state/_schemas/`, y otros
-schemas referenciaban archivos que no existían, provocando `[SKIP]` o comportamiento ambiguo.
-
-**Cambios realizados:**
-
-#### Schemas nuevos creados (`state/_schemas/`)
-
-| Schema | Archivo de estado validado | Notas |
-|--------|---------------------------|-------|
-| `coverage-summary.schema.json` | `state/coverage-summary.json` | `lineCoverage`/`branchCoverage` como `number\|null` |
-| `discovery-summary.schema.json` | `state/discovery-summary.json` | Soporta tanto top-level como per-module `sourceRoots` |
-| `generated-tests.schema.json` | `state/generated-tests.json` | `status` enum: PROPOSED/VALIDATED/DISCARDED/COMMITTED |
-
-#### Archivos de estado nuevos creados (`state/`)
-
-| Archivo | Motivo | Contenido inicial |
-|---------|--------|-------------------|
-| `state/archetype-profile.json` | Referenciado en agents pero no existía | `{"schemaVersion": 1, "modules": []}` |
-| `state/generated-code-index.json` | Schema existía sin archivo | `{"schemaVersion": 1, "module": "", "generators": [], ...}` |
-| `state/import-whitelist.json` | Schema existía sin archivo (gate G1) | `{"schemaVersion": 1, "module": "", "packages": [], "classes": []}` |
-
-#### Archivos de estado actualizados (`state/`)
-
-| Archivo | Corrección |
-|---------|-----------|
-| `state/coverage-summary.json` | Añadido `"schemaVersion": 1` |
-| `state/discovery-summary.json` | Añadido `"schemaVersion": 1` y `"root": "."` |
-| `state/generated-tests.json` | Añadido `"schemaVersion": 1` |
-
-#### Archivos auxiliares sin schema (documentados como `[INFO]`)
-
-Los siguientes archivos `state/*.json` no tienen schema porque son estado auxiliar gestionado
-internamente por el pipeline — se reportan con `[INFO]` (no error):
-
-- `state/module-progress.json` — progreso por módulo, escrito por `run_pipeline.py`
-- `state/symbol-contracts.json` — manifest del directorio `symbol-contracts/`
-- `state/telemetry.json` — métricas de ejecución internas
-
----
-
-### Corrección 2 — Reescritura de `tools/python/state_validator.py`
-
-**Problema original:**
-1. Solo aceptaba `--state`; la documentación referenciaba `--state-dir`.
-2. `symbol-contract.schema.json` intentaba validar `state/symbol-contract.json` (no existe);
-   debía validar `state/symbol-contracts/*.json` (un archivo por FQCN).
-3. Los archivos sin schema no generaban ninguna salida (silencio ambiguo).
-4. Formato de salida inconsistente.
-
-**Solución implementada:**
-
-#### Argumento dual `--state` / `--state-dir`
-
-```python
-ap.add_argument("--state",    default=None)
-ap.add_argument("--state-dir", dest="state_dir", default=None)
-# --state-dir tiene prioridad; si ambos se pasan, se emite [WARN]
-```
-
-#### `_SPECIAL_SCHEMAS` — excepción para `symbol-contract`
-
-```python
-_SPECIAL_SCHEMAS: frozenset[str] = frozenset({"symbol-contract"})
-```
-
-El schema `symbol-contract.schema.json` no se mapea a `state/symbol-contract.json`.
-En su lugar, `validate_symbol_contracts()` itera `state/symbol-contracts/*.json`.
-
-#### `validate_symbol_contracts()` — validación del directorio
-
-- Directorio inexistente → `[INFO] ... not found; skipping`
-- Directorio vacío → `[INFO] ... has no contract files yet`
-- Cada archivo válido → `[OK]   state/symbol-contracts/<fqcn>.json`
-- Cada archivo inválido → `[ERR]` con path del schema y razón detallada
-- Exit code 1 si al menos un contrato es inválido
-
-#### `report_auxiliary_files()` — archivos sin schema
-
-Detecta automáticamente todo `state/*.json` que no tenga un `*.schema.json` correspondiente
-y emite `[INFO] state/<file>.json has no schema; treated as auxiliary state`.
-
-#### Formato de salida estandarizado
-
-| Prefijo | Significado |
-|---------|-------------|
-| `[OK]   state/<file>.json` | Archivo válido contra su schema |
-| `[SKIP] <name>.json missing (generated at runtime by pipeline)` | Schema existe pero el archivo se genera en runtime |
-| `[INFO] ...` | Auxiliar sin schema, directorio vacío, o condición no bloqueante |
-| `[ERR]  state/<file>.json` | Inválido — incluye path del schema y razón |
-| `[WARN] ...` | Advertencia no bloqueante (ej: ambos `--state` y `--state-dir`) |
-| `[FAIL] ...` | Error fatal (directorio no encontrado, dependencia faltante) |
-
----
-
-### Resultados de validación
-
-#### Test 1 — Compilación sintáctica
-
-```
-python -m py_compile tools/python/state_validator.py
-# → Syntax OK (sin salida = éxito)
-```
-
-#### Test 2 — `--state state`
-
-```
-python tools/python/state_validator.py --state state
-```
-
-```
-[OK]   state/archetype-profile.json
-[OK]   state/batch-plan.json
-[OK]   state/build-tool-contract.json
-[OK]   state/classification-index.json
-[OK]   state/compile-error-index.json
-[OK]   state/coverage-delta.json
-[OK]   state/coverage-summary.json
-[OK]   state/coverage-targets.json
-[OK]   state/dependency-graph.json
-[OK]   state/discovery-summary.json
-[OK]   state/execution-state.json
-[OK]   state/failure-memory.json
-[OK]   state/fixture-catalog.json
-[OK]   state/generated-code-index.json
-[OK]   state/generated-tests.json
-[OK]   state/import-whitelist.json
-[OK]   state/incremental-map.json
-[OK]   state/mutation-intelligence.json
-[OK]   state/stack-profile.json
-[INFO] state/symbol-contracts/ has no contract files yet
-[INFO] state/module-progress.json has no schema; treated as auxiliary state
-[INFO] state/symbol-contracts.json has no schema; treated as auxiliary state
-[INFO] state/telemetry.json has no schema; treated as auxiliary state
-EXIT CODE: 0
-```
-
-19 schemas validados correctamente. Sin `[SKIP]` injustificados. Sin `[ERR]`.
-
-#### Test 3 — `--state-dir state` (alias)
-
-```
-python tools/python/state_validator.py --state-dir state
-```
-
-Salida idéntica al Test 2. EXIT CODE: 0.
-
-#### Test 4 — Validación negativa (contrato inválido)
-
-```bash
-# Crear contrato inválido (falta campo obligatorio 'fqcn')
-echo '{"schemaVersion": 1}' > state/symbol-contracts/Invalid.json
-python tools/python/state_validator.py --state state
-```
-
-```
-[ERR]  state/symbol-contracts/Invalid.json
-       schema: state/_schemas/symbol-contract.schema.json
-       reason: 'fqcn' is a required property
-[OK]   state/archetype-profile.json
-...
-EXIT CODE: 1
-```
-
-```bash
-# Eliminar el archivo inválido → vuelve a pasar
-rm state/symbol-contracts/Invalid.json
-python tools/python/state_validator.py --state state
-# EXIT CODE: 0
-```
-
----
-
-### Criterios de aceptación — verificados ✓
-
-| # | Criterio | Estado |
-|---|----------|--------|
-| 1 | `--state state` pasa sin errores | ✓ EXIT 0 |
-| 2 | `--state-dir state` pasa sin errores | ✓ EXIT 0 |
-| 3 | No más `[SKIP] symbol-contract.json missing` | ✓ Eliminado |
-| 4 | `symbol-contracts/` vacío → mensaje informativo, sin error | ✓ `[INFO]` |
-| 5 | `Invalid.json` con `{"schemaVersion":1}` → detectado y falla | ✓ EXIT 1 |
-| 6 | `archetype-profile`, `generated-code-index`, `import-whitelist` tienen schema y archivo | ✓ Todos `[OK]` |
-| 7 | Archivos sin schema tratados como auxiliares | ✓ `[INFO]` |
-
----
-
-## Correcciones anteriores (Sesión 2)
-
-### Bugs críticos en Python
-
-- **`cycle_summarizer.py`** — `_extract_coverage_delta()` siempre retornaba 0; corregido para
-  leer la ruta correcta `totals.lines.delta` desde `coverage-delta.json`.
-
-- **`semantic_index_writer.py`** — `build_dependencies_index()` solo leía formato legacy
-  (`classes: {}`); los agentes LLM escriben formato schema-canonical (`graphs: []`).
-  Corregido para soportar ambos formatos.
-
-### Bugs en `bytecode_scanner.py`
-
-- `DESC_RE.match(nxt)` era invocado dos veces (en el `if` y para `.group(1)`).
-  Corregido guardando el resultado en `desc_match`.
-
-### Estado `state/*.json` — 12 archivos corregidos
-
-Todos los archivos de estado fueron corregidos para validar contra sus schemas. Detalles en el
-historial de commits.
-
-### Documentación
-
-- `tools/python/README.md` — reemplazada referencia a `freebuilder_scanner.py` (no existe)
-  por `source_symbol_enricher.py`; añadidos los 15 scripts reales.
-- `MASTER_PROMPT.md` — añadida documentación de modo standalone vs embedded.
-- `skills/08-validation/build-tool-adapter.md` — Gradle explícitamente marcado como NO soportado;
-  código de abort: `BLOCKED_GRADLE_NOT_SUPPORTED_IN_PIPELINE`.
-
----
-
-## Correcciones anteriores (Sesión 1)
-
-### Bugs en Python
-
-- **`bytecode_scanner.py`** — `from datetime import datetime, timezone` movido a top-level;
-  doble llamada a `DESC_RE.match()` corregida.
-- **`incremental_map_writer.py`** — `import hashlib` movido a top-level.
-- **`stacktrace.py`** — `import os` movido a top-level.
-- **`jacoco_parser.py`** — variable muerta `cxty` eliminada; comentario contradictorio eliminado.
-- **`source_symbol_enricher.py`** — `annotations.add(ann); changed = True` separado en dos líneas.
-
-### Schema nuevo
-
-- **`state/_schemas/incremental-map.schema.json`** — creado (estaba referenciado en
-  `incremental_map_writer.py` como `"$schemaRef"` pero el archivo no existía).
+## 4. Resumen ejecutivo
+
+| # | Criterio | Resultado |
+|---|----------|-----------|
+| 1 | Compilación Python — 24 scripts (exit 0, 0 errores de sintaxis) | **LIMPIA** |
+| 2 | CLI `--help` — 9 scripts clave (exit 0 en todos) | **EXITOSA** |
+| 3 | Esquema `bodyLines` eliminado de `prompts/` y `docs/` | **CUMPLIDO** |
+| 4 | Esquema nativo `test_patch_applier.py` adoptado en ambos agentes | **CUMPLIDO** |
+| 5 | Prohibición de `import`/`package`/`class` en `methods[].body` (doble anclaje: prohibición absoluta + regla de generación) | **CUMPLIDO** |
+| 6 | Restricción de tipos en `fields[]` a fuentes evidenciadas | **CUMPLIDO** |
+| 7 | Contrato de bloqueo `BLOCKED` en ambos agentes y en el protocolo | **CUMPLIDO** |
+| 8 | `repair-agent.md` con `patchId: "repair:<id>"`, campo `repairOf` y `originalPatchId` en entrada | **CUMPLIDO** |
+| 9 | Tabla de correspondencias herramienta ↔ responsabilidad en `MASTER_PROMPT.md` | **CUMPLIDO** |
+| 10 | Fases 3, 5, 6, 7 reescritas de rol ejecutor a rol reactivo | **CUMPLIDO** |
+| 11 | "AST linter" / "Linter AST" erradicados (0 ocurrencias residuales) | **CUMPLIDO** |
+| 12 | Gates anti-alucinación G1–G9 preservados íntegramente | **CUMPLIDO** |
