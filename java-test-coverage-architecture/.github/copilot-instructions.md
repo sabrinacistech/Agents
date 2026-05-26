@@ -294,10 +294,13 @@ The patch is then applied via `test_patch_applier.py`:
 
 # 2. Apply the patch deterministically
 python tools/python/test_patch_applier.py \
-  --patch  state/_patches/FooServiceTest.patch.json \
-  --repo   <repo-root> \
-  --state  state \
-  --templates templates
+  --patch        state/_patches/<FQCNTest>.patch.json \
+  --repo         <ruta-al-repo-java> \
+  --state        state \
+  --templates    templates \
+  --context-pack state/context-packs/<fqcn>.json \
+  --whitelist    state/import-whitelist.json \
+  --out          state/generated-tests.json
 
 # 3. Lint before accepting
 python tools/python/test_linter.py \

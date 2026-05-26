@@ -96,11 +96,13 @@ Todo cambio físico a archivos Java de test se aplica **exclusivamente** mediant
 
 ```bash
 python tools/python/test_patch_applier.py \
-  --patch  state/_patches/<FQCNTest>.patch.json \
-  --repo   <ruta-al-repo-java> \
-  --state  state \
-  --templates templates \
-  --out    state/generated-tests.json
+  --patch        state/_patches/<FQCNTest>.patch.json \
+  --repo         <ruta-al-repo-java> \
+  --state        state \
+  --templates    templates \
+  --context-pack state/context-packs/<fqcn>.json \
+  --whitelist    state/import-whitelist.json \
+  --out          state/generated-tests.json
 ```
 
 **Reglas absolutas del patcher:**

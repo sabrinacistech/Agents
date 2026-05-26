@@ -13,11 +13,13 @@ HARD CONSTRAINTS enforced here (not by the LLM):
 
 Usage:
   python test_patch_applier.py \\
-    --patch  state/_patches/FooServiceTest.patch.json \\
-    --repo   /path/to/java-repo \\
-    --state  state \\
-    --templates templates \\
-    --out   state/generated-tests.json \\
+    --patch         state/_patches/FooServiceTest.patch.json \\
+    --repo          /path/to/java-repo \\
+    --state         state \\
+    --templates     templates \\
+    --context-pack  state/context-packs/<fqcn>.json \\
+    --whitelist     state/import-whitelist.json \\
+    --out           state/generated-tests.json \\
     [--dry-run]
 """
 from __future__ import annotations
@@ -69,6 +71,30 @@ _BODY_PLACEHOLDER_RE = re.compile(
     r"[ \t]*//[ \t]*\$\{TEST_BODY\}[^\n]*",
     re.MULTILINE,
 )
+
+
+# ── Import perimeter helpers ──────────────────────────────────────────────────
+
+def _import_in_authorized_set(imp: str, authorized: set[str]) -> bool:
+    """Return True if *imp* (a patch.allowedImports entry) is covered by *authorized*.
+
+    *authorized* may contain: full FQCNs, package names, or "static X.Y.Z" entries.
+    Matching rules (in order):
+      1. Exact match (including "static X.Y.Z" entries from context-pack).
+      2. Strip leading "static " and retry.
+      3. Package prefix: "org.junit.jupiter.api" covers "org.junit.jupiter.api.Test".
+      4. Wildcard: "org.junit.*" is covered if "org.junit" is in authorized.
+    """
+    if imp in authorized:
+        return True
+    bare = imp[len("static "):] if imp.startswith("static ") else imp
+    if bare in authorized:
+        return True
+    if bare.endswith(".*"):
+        return bare[:-2] in authorized
+    if "." in bare:
+        return bare.rsplit(".", 1)[0] in authorized
+    return False
 
 
 # ── Safety checks ─────────────────────────────────────────────────────────────
@@ -406,6 +432,28 @@ def main() -> int:
             "The generated-tests.json report is also NOT updated."
         ),
     )
+    ap.add_argument(
+        "--context-pack",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Optional: path to state/context-packs/<fqcn>.json. "
+            "When provided, (1) validates patch.allowedImports against "
+            "contextPack.allowedImports and (2) asserts patch.sut == contextPack.sut. "
+            "Any import absent from the authorized set causes exit 3."
+        ),
+    )
+    ap.add_argument(
+        "--whitelist",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Optional: path to state/import-whitelist.json. "
+            "When provided, validates patch.allowedImports against the whitelist's "
+            "packages[] and classes[] entries. "
+            "Any import absent from the authorized set causes exit 3."
+        ),
+    )
     args = ap.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -441,6 +489,51 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    # ── Perimeter interception middleware (runs before any I/O write) ─────────
+    context_pack: dict | None = None
+    if args.context_pack:
+        try:
+            context_pack = load_json(Path(args.context_pack).resolve())
+        except Exception as exc:
+            print(f"[FAIL] Cannot load context-pack: {exc}", file=sys.stderr)
+            return 2
+        # Structural SUT identity check
+        cp_sut = context_pack.get("sut")
+        patch_sut = patch.get("sut")
+        if cp_sut != patch_sut:
+            print(
+                f"[BLOCKED] patch.sut '{patch_sut}' does not match "
+                f"contextPack.sut '{cp_sut}'",
+                file=sys.stderr,
+            )
+            return 3
+
+    # Build authorized import set (union of context-pack + whitelist sources)
+    authorized_imports: set[str] | None = None
+    if context_pack is not None or args.whitelist:
+        authorized_imports = set()
+        if context_pack is not None:
+            authorized_imports.update(context_pack.get("allowedImports") or [])
+        if args.whitelist:
+            try:
+                wl = load_json(Path(args.whitelist).resolve())
+            except Exception as exc:
+                print(f"[FAIL] Cannot load whitelist: {exc}", file=sys.stderr)
+                return 2
+            authorized_imports.update(wl.get("packages") or [])
+            authorized_imports.update(wl.get("classes") or [])
+
+    # Validate every declared import against the authorized perimeter
+    if authorized_imports is not None:
+        for imp in (patch.get("allowedImports") or []):
+            if not _import_in_authorized_set(imp, authorized_imports):
+                print(
+                    f"[BLOCKED] import not allowed by context-pack/whitelist: {imp}",
+                    file=sys.stderr,
+                )
+                return 3
+    # ── End perimeter middleware ───────────────────────────────────────────────
 
     try:
         result = apply_patch(patch, repo, templates_dir, dry_run=args.dry_run)

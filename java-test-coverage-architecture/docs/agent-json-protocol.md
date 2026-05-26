@@ -167,7 +167,9 @@ Body Agent genera JSON
 state/_patches/<testClass>.patch.json
         │
         ▼
-test_patch_applier.py --patch <file> --repo <repo> --state state
+test_patch_applier.py --patch <file> --repo <repo> --state state --templates templates \
+        --context-pack state/context-packs/<fqcn>.json --whitelist state/import-whitelist.json \
+        --out state/generated-tests.json
         │
         ├─ [INITIALIZED] si el archivo .java no existe → desde template
         ├─ [PATCHED]      si el archivo .java existe → inyección de métodos/fields
