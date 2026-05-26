@@ -27,7 +27,7 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import atomic_write_json, fail, load_json, validate  # noqa: E402
+from common import _TimedRun, atomic_write_json, emit_tool_summary, fail, load_json, validate  # noqa: E402,F401
 
 SCHEMA_NAME = "context-pack"
 DEFAULT_MAX_IMPORTS = 40
@@ -830,4 +830,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with _TimedRun("context_pack_builder") as _tr:
+        _rc = main()
+        if _rc != 0:
+            _tr.set_status("FAIL")
+        _tr.add("exitCode", _rc)
+    sys.exit(_rc)

@@ -44,7 +44,7 @@ import json
 import sys
 from pathlib import Path
 
-from common import SCHEMAS_DIR
+from common import _TimedRun, SCHEMAS_DIR, emit_tool_summary  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Schemas que NO se mapean a state/<name>.json sino que tienen lógica propia.
@@ -409,4 +409,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with _TimedRun("state_validator") as _tr:
+        _rc = main()
+        if _rc != 0:
+            _tr.set_status("FAIL")
+        _tr.add("exitCode", _rc)
+    sys.exit(_rc)

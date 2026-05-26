@@ -11,10 +11,95 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Iterable
 
 SCHEMAS_DIR = Path(__file__).resolve().parents[1].parent / "state" / "_schemas"
+
+
+# ── Structured logging (P4.0) ─────────────────────────────────────────────────
+
+def emit_tool_summary(
+    tool: str,
+    status: str,
+    artifacts: list | None = None,
+    duration_ms: int | None = None,
+    **extra: Any,
+) -> None:
+    """Emit a single-line JSON tool summary on stdout.
+
+    Intended as the LAST line printed by a tool's main() so callers (e.g.
+    orchestrators) can parse one structured record per invocation.
+    """
+    payload: dict[str, Any] = {"tool": tool, "status": status}
+    if artifacts is not None:
+        payload["artifacts"] = artifacts
+    if duration_ms is not None:
+        payload["durationMs"] = int(duration_ms)
+    for k, v in extra.items():
+        if v is not None:
+            payload[k] = v
+    print(json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
+
+
+class _TimedRun:
+    """Context manager that times a tool invocation and emits a summary on exit.
+
+    Usage:
+        with _TimedRun("my_tool") as tr:
+            ...
+            tr.set_status("FAIL")           # optional override
+            tr.set_artifacts([...])         # optional
+            tr.add("extraField", value)     # optional kv pair
+    Emits emit_tool_summary(tool, status, artifacts, duration_ms, **extra)
+    on __exit__. status is "FAIL" if an exception propagates, otherwise the
+    last value set (default "OK").
+    """
+
+    def __init__(self, tool: str) -> None:
+        self.tool = tool
+        self.status: str = "OK"
+        self.artifacts: list | None = None
+        self.extra: dict[str, Any] = {}
+        self._t0: float = 0.0
+
+    def __enter__(self) -> "_TimedRun":
+        self._t0 = time.perf_counter()
+        return self
+
+    def set_status(self, status: str) -> None:
+        self.status = status
+
+    def set_artifacts(self, artifacts: list) -> None:
+        self.artifacts = artifacts
+
+    def add(self, key: str, value: Any) -> None:
+        self.extra[key] = value
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        duration_ms = int((time.perf_counter() - self._t0) * 1000)
+        if exc_type is None:
+            status = self.status
+        elif issubclass(exc_type, SystemExit):
+            code = getattr(exc, "code", 0)
+            if isinstance(code, int):
+                status = self.status if code == 0 else "FAIL"
+            else:
+                status = "FAIL" if code else self.status
+        else:
+            status = "FAIL"
+        try:
+            emit_tool_summary(
+                self.tool,
+                status,
+                artifacts=self.artifacts,
+                duration_ms=duration_ms,
+                **self.extra,
+            )
+        except Exception:
+            pass
+        return False
 
 
 def sha256_text(s: str) -> str:

@@ -32,7 +32,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from common import atomic_write_json, load_json, validate
+from common import _TimedRun, atomic_write_json, emit_tool_summary, load_json, validate  # noqa: F401
 
 # ── Safety constants ─────────────────────────────────────────────────────────
 _FORBIDDEN_SEGMENTS = ("src/main/java", "src\\main\\java")
@@ -611,4 +611,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with _TimedRun("test_patch_applier") as _tr:
+        _rc = main()
+        if _rc != 0:
+            _tr.set_status("FAIL")
+        _tr.add("exitCode", _rc)
+    sys.exit(_rc)

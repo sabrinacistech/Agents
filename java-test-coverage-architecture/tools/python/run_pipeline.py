@@ -54,6 +54,7 @@ Skip names for --skip flag
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -62,6 +63,126 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from common import _TimedRun, emit_tool_summary  # noqa: E402
+
+# ── P4.1: conservative input-hash cache ───────────────────────────────────────
+# Only these steps are cacheable. Anything else always runs.
+_CACHEABLE_STEPS: frozenset[str] = frozenset({
+    "stack", "classification", "planning", "context",
+})
+
+
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _safe_hash(parts: list[str]) -> str:
+    h = hashlib.sha256()
+    for s in sorted(parts):
+        h.update(s.encode("utf-8"))
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
+    """Return list of input identifiers for a cacheable step, or None if
+    inputs cannot be enumerated (treat as always-miss).
+    """
+    parts: list[str] = [f"step={step}"]
+    if step == "stack":
+        repo = Path(args.repo)
+        parts.append(f"repo={repo}")
+        try:
+            poms = [
+                p for p in sorted(repo.rglob("pom.xml"))
+                if "target" not in p.parts and "build" not in p.parts
+            ]
+        except OSError:
+            return None
+        for p in poms:
+            try:
+                parts.append(f"{p}:{_sha256_file(p)}")
+            except OSError:
+                return None
+        return parts
+    if step == "classification":
+        idx_dir = out_dir / "index"
+        if not idx_dir.exists():
+            return None
+        for p in sorted(idx_dir.glob("*.json")):
+            try:
+                parts.append(f"{p.name}:{_sha256_file(p)}")
+            except OSError:
+                return None
+        return parts
+    if step == "planning":
+        parts.append(f"mode={args.coverage_mode}")
+        for name in (
+            "coverage-targets.json",
+            "classification-index.json",
+            "dependency-graph.json",
+            "fixture-catalog.json",
+            "incremental-map.json",
+            "stack-profile.json",
+        ):
+            p = out_dir / name
+            if p.exists():
+                try:
+                    parts.append(f"{name}:{_sha256_file(p)}")
+                except OSError:
+                    return None
+        return parts
+    if step == "context":
+        parts.append(f"sut={args.sut or ''}")
+        for name in (
+            "batch-plan.json",
+            "stack-profile.json",
+            "classification-index.json",
+            "dependency-graph.json",
+            "fixture-catalog.json",
+            "coverage-targets.json",
+            "import-whitelist.json",
+        ):
+            p = out_dir / name
+            if p.exists():
+                try:
+                    parts.append(f"{name}:{_sha256_file(p)}")
+                except OSError:
+                    return None
+        return parts
+    return None
+
+
+def _cache_path(out_dir: Path) -> Path:
+    return out_dir / "_summaries" / "cache.json"
+
+
+def _cache_load(out_dir: Path) -> dict:
+    p = _cache_path(out_dir)
+    if not p.exists():
+        return {"schemaVersion": 1, "entries": {}}
+    try:
+        with p.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or "entries" not in data:
+            return {"schemaVersion": 1, "entries": {}}
+        return data
+    except Exception:
+        return {"schemaVersion": 1, "entries": {}}
+
+
+def _cache_write(out_dir: Path, data: dict) -> None:
+    target = _cache_path(out_dir)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, target)
 
 
 def run_step(args: list[str]) -> int:
@@ -185,6 +306,19 @@ def main() -> int:
             "at the first non-zero exit and writes state/_summaries/last-failure.json."
         ),
     )
+    ap.add_argument(
+        "--sut",
+        default=None,
+        metavar="FQCN",
+        help=(
+            "Optional: restrict context-pack building (Step 16) to a single FQCN. "
+            "Propagated as --sut to context_pack_builder.py. "
+            "coverage_planner.py does NOT currently filter by SUT — planning still runs "
+            "across the full plan and a [WARN] is emitted. "
+            "bytecode_scanner.py does not yet expose a --fqcn-filter; a [WARN] is logged "
+            "if --sut is supplied alongside --module."
+        ),
+    )
     args = ap.parse_args()
 
     skip: set[str] = set(args.skip or [])
@@ -192,9 +326,57 @@ def main() -> int:
     coe = bool(args.continue_on_error)
     rc = 0
 
+    # ── P4.1 cache state ─────────────────────────────────────────────────────
+    cache_data = _cache_load(out_dir)
+    cache_entries: dict = cache_data.setdefault("entries", {})
+
+    def _try_cache_hit(name: str) -> bool:
+        """Return True and emit HIT_CACHE summary when inputs match the
+        recorded hash. Otherwise return False."""
+        if name not in _CACHEABLE_STEPS:
+            return False
+        sig = _step_input_signature(name, args, out_dir)
+        if sig is None:
+            return False
+        h = _safe_hash(sig)
+        entry = cache_entries.get(name)
+        if entry and entry.get("inputHash") == h:
+            emit_tool_summary(
+                name,
+                "HIT_CACHE",
+                inputHash=h,
+            )
+            return True
+        # Miss: remember new hash AFTER step executes (handled in step()).
+        cache_entries[name] = {
+            "_pendingHash": h,
+        }
+        return False
+
+    def _commit_cache_after(name: str, rc_local: int) -> None:
+        if name not in _CACHEABLE_STEPS:
+            return
+        entry = cache_entries.get(name) or {}
+        pending = entry.pop("_pendingHash", None)
+        if rc_local == 0 and pending:
+            entry["inputHash"] = pending
+            entry["timestampUtc"] = datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            cache_entries[name] = entry
+            try:
+                _cache_write(out_dir, cache_data)
+            except OSError:
+                pass
+
     def step(name: str, cmd: list) -> None:
         nonlocal rc
-        rc |= run_required_step(name, cmd, out_dir, coe)
+        if _try_cache_hit(name):
+            print(f"\n[CACHE HIT] {name} — skipping (inputs unchanged)")
+            return
+        step_rc = run_required_step(name, cmd, out_dir, coe)
+        rc |= step_rc
+        _commit_cache_after(name, step_rc)
 
     # ── Step 1: POM / build-tool contract ────────────────────────────────────
     if "pom" not in skip:
@@ -225,6 +407,14 @@ def main() -> int:
 
     # ── Step 6: Bytecode scanner → symbol-contracts/<fqcn>.json ─────────────
     if "bytecode" not in skip and args.module:
+        if args.sut:
+            # bytecode_scanner.py does not yet expose --fqcn-filter.
+            # TODO: add --fqcn-filter to bytecode_scanner.py to narrow the scan.
+            print(
+                "[WARN] --sut supplied but bytecode_scanner has no --fqcn-filter; "
+                "scan still uses --include regex only",
+                file=sys.stderr,
+            )
         step("bytecode", [
             HERE / "bytecode_scanner.py",
             "--repo", args.repo, "--out", args.out,
@@ -276,6 +466,13 @@ def main() -> int:
             "--out", args.out,
             "--mode", args.coverage_mode,
         ]
+        if args.sut:
+            # coverage_planner.py does not currently accept --sut; planning
+            # still runs across the full plan. context_pack_builder filters.
+            print(
+                "[WARN] --sut filters context only; planning still full",
+                file=sys.stderr,
+            )
         step("planning", plan_args)
 
     # ── Step 14 [Phase 3]: Incremental map writer ─────────────────────────────
@@ -296,11 +493,19 @@ def main() -> int:
 
     # ── Step 16: Context pack builder → state/context-packs/<safe_fqcn>.json ─
     if "context" not in skip:
-        step("context", [HERE / "context_pack_builder.py", "--out", args.out])
+        ctx_args = [HERE / "context_pack_builder.py", "--out", args.out]
+        if args.sut:
+            ctx_args += ["--sut", args.sut]
+        step("context", ctx_args)
 
     print("\nDone." if rc == 0 else "\nDone with errors.")
     return rc
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    with _TimedRun("run_pipeline") as _tr:
+        _rc = main()
+        if _rc != 0:
+            _tr.set_status("FAIL")
+        _tr.add("exitCode", _rc)
+    sys.exit(_rc)
