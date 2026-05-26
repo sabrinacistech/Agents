@@ -52,7 +52,7 @@ Reglas específicas para repos basados en los parent POMs `bgba-parent-pom`, `bg
 
 ## Atajos para Generation
 
-`state/archetype-profile.json#implies` actúa como **preset** para `generation-agent`:
+`state/archetype-profile.json#implies` actúa como **preset** para los agentes de generación (`test-intent-agent` + `test-body-agent`):
 - `namespace: jakarta` ⇒ presets de imports incluyen `jakarta.*` y excluyen `javax.*`.
 - `namespace: javax` ⇒ a la inversa.
 - `junit: 5` ⇒ runner `MockitoExtension`; prohibido `@RunWith`.

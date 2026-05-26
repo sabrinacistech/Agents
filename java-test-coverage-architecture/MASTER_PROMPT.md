@@ -170,7 +170,12 @@ Leer `state/fixture-catalog.json` producido por `tools/python/fixture_catalog_bu
 Leer `state/batch-plan.json` producido por `tools/python/coverage_planner.py`. No re-planificar — el agente consume el plan como dato de entrada. El planner ya cruzó JaCoCo XML con la clasificación y priorizó por modo (`coverage`, `branch-coverage`, `mutation-hardening`).
 
 ### 8. Generation
-Consumir `state/context-packs/<fqcn>.json` producido por `tools/python/context_pack_builder.py` y generar el patch descriptor JSON estructurado. Los agentes LLM producen **esquemas JSON** (no archivos Java completos); la escritura física en disco es exclusiva de `test_patch_applier.py`. Cada método embebe en `evidenceIds` los IDs de los contratos consumidos.
+Consumir `state/context-packs/<fqcn>.json` producido por `tools/python/context_pack_builder.py` y generar el patch descriptor JSON estructurado. La generación se divide en dos agentes secuenciales:
+
+1. `agents/test-intent-agent.md` — produce los casos de prueba (intención: scenarios, given/when/then, mockSetup) a partir del context-pack.
+2. `agents/test-body-agent.md` — produce el patch descriptor JSON nativo del patcher para cada caso de prueba.
+
+Los agentes LLM producen **esquemas JSON** (no archivos Java completos); la escritura física en disco es exclusiva de `test_patch_applier.py`. Cada método embebe en `evidenceIds` los IDs de los contratos consumidos.
 
 ### 9. Validation
 - static pre-compile linter (`tools/python/test_linter.py`) sobre el test propuesto (gate G6) antes de compilar.

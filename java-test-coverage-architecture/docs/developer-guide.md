@@ -155,7 +155,7 @@ Si `writeTests: false`, los tests están en el reporte. Para aplicarlos, repetir
 | `G3_BYTECODE_FIRST_VIOLATED` | El agente intentó usar regex sobre `.java`. | Regenerar `symbol-contracts` con `bytecode_scanner.py`. |
 | `G4_GENERATED_SOURCES_MISSING` | Hay annotation processors pero no `target/generated-sources`. | Correr `mvn -q -DskipTests package` y reejecutar pipeline. |
 | `BLOCKED_NO_COVERAGE` | No hay `jacoco.xml` parseable. | Generar el reporte JaCoCo o usar el bootstrap CLI del skill `jacoco-bootstrap`. |
-| Imports irresolutos llegan al `javac` | Saltearon `test_linter.py`. | Verificar que `generation-agent` invoque el linter antes de compilar. |
+| Imports irresolutos llegan al `javac` | Saltearon `test_linter.py`. | Verificar que `test-body-agent` invoque el linter antes de compilar. |
 | El ciclo lleva mucho tiempo | `mvn clean` entre tests, no hay batches, contratos no cacheados. | Ver [docs/performance-tuning.md](docs/performance-tuning.md). |
 
 ## 10. Mantenimiento del pre-stage

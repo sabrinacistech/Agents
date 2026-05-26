@@ -67,7 +67,7 @@ ls modules/ | xargs -P 4 -I{} python tools/python/bytecode_scanner.py --repo . -
 - No invalidar si `pom.xml` y `target/classes/**/*.class` no cambiaron.
 
 ### 8. Mensajes a los agentes (presupuesto)
-- El prompt de `generation-agent` debe entregar **solo**:
+- El prompt de los agentes de generación (`test-intent-agent` + `test-body-agent`) debe entregar **solo**:
   - 1 SUT a la vez (o batch homogéneo)
   - vista mínima de su contrato (`_views/<batchId>.json`)
   - subset relevante de la whitelist (imports candidatos)

@@ -93,8 +93,8 @@ Esto produce:
 
 ## Procedimiento
 Ejecutá las fases en orden: discovery → stack-profile → classification →
-symbol-contract → dependency-graph → fixtures → planning → generation →
-validation → repair → reporting.
+symbol-contract → dependency-graph → fixtures → planning →
+generation (test-intent → test-body) → validation → repair → reporting.
 
 Para CADA fase:
 - Listá las precondiciones que verificás (referenciando schemas).
