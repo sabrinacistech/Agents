@@ -27,17 +27,50 @@
     "mode": {
       "enum": ["coverage", "branch-coverage", "mutation-hardening"]
     },
+    "blocked": {
+      "type": "boolean",
+      "description": "True when this context-pack is blocked due to a fallen profile; agent must not generate tests"
+    },
+    "blockReason": {
+      "type": ["string", "null"],
+      "description": "Human-readable reason why this context-pack is blocked; null when not blocked"
+    },
     "classification": {
       "type": "object",
       "description": "Classification metadata from classification-index.json",
       "properties": {
         "type": {
-          "enum": ["service", "controller", "repository", "mapper", "util", "config", "dto", "generated", "entity", "exception"]
+          "type": "string",
+          "enum": [
+            "controller",
+            "service",
+            "repository",
+            "component",
+            "configuration",
+            "mapper",
+            "non-instantiable",
+            "data-carrier",
+            "enum",
+            "generated/excluded",
+            "util",
+            "config",
+            "dto",
+            "generated",
+            "entity",
+            "exception"
+          ]
         },
-        "risk": { "type": "number" },
-        "score": { "type": "number" },
-        "cyclomatic": { "type": "integer" },
-        "tags": { "type": "array", "items": { "type": "string" } }
+        "testabilityRisk": { "enum": ["low", "medium", "high"] },
+        "coverageValue":   { "enum": ["low", "medium", "high"] },
+        "recommendedTemplate": { "type": ["string", "null"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "tags":    { "type": "array", "items": { "type": "string" } },
+        "loc":          { "type": "integer" },
+        "publicMethods": { "type": "integer" },
+        "cyclomatic":   { "type": "integer" },
+        "coverage":     { "type": "object" },
+        "risk":  { "type": "number" },
+        "score": { "type": "number" }
       }
     },
     "stack": {
@@ -46,16 +79,16 @@
       "required": ["javaVersion", "testFramework", "mockFramework"],
       "additionalProperties": false,
       "properties": {
-        "javaVersion": { "type": "string" },
-        "testFramework": { "enum": ["junit4", "junit5"] },
-        "testVersion": { "type": "string" },
-        "mockFramework": { "enum": ["mockito"] },
-        "mockVersion": { "type": "string" },
-        "assertFramework": { "enum": ["assertj", "hamcrest", "junit-builtin"] },
-        "springEnabled": { "type": "boolean" },
+        "javaVersion":    { "type": "string" },
+        "testFramework":  { "enum": ["junit4", "junit5", "unknown"] },
+        "testVersion":    { "type": "string" },
+        "mockFramework":  { "enum": ["mockito", "none", "unknown"] },
+        "mockVersion":    { "type": "string" },
+        "assertFramework": { "enum": ["assertj", "hamcrest", "junit-builtin", "none", "unknown"] },
+        "springEnabled":     { "type": "boolean" },
         "springBootVersion": { "type": ["string", "null"] },
-        "springSlices": { "type": "array", "items": { "type": "string" } },
-        "namespaceStyle": { "enum": ["javax", "jakarta", "none"] },
+        "springSlices":      { "type": "array", "items": { "type": "string" } },
+        "namespaceStyle": { "enum": ["javax", "jakarta", "none", "unknown"] },
         "annotationProcessors": { "type": "array", "items": { "type": "string" } }
       }
     },
@@ -65,7 +98,7 @@
       "required": ["totalMissedLines", "totalMissedBranches", "targets"],
       "additionalProperties": false,
       "properties": {
-        "totalMissedLines": { "type": "integer", "minimum": 0 },
+        "totalMissedLines":    { "type": "integer", "minimum": 0 },
         "totalMissedBranches": { "type": "integer", "minimum": 0 },
         "targets": {
           "type": "array",
@@ -74,12 +107,12 @@
             "required": ["targetId", "method", "missedLines", "missedBranches"],
             "additionalProperties": false,
             "properties": {
-              "targetId": { "type": "string" },
-              "method": { "type": "string" },
-              "missedLines": { "type": "integer", "minimum": 0 },
-              "missedBranches": { "type": "integer", "minimum": 0 },
-              "branchId": { "type": ["string", "null"] },
-              "score": { "type": "number" }
+              "targetId":      { "type": "string" },
+              "method":        { "type": "string" },
+              "missedLines":   { "type": "integer", "minimum": 0 },
+              "missedBranches":{ "type": "integer", "minimum": 0 },
+              "branchId":      { "type": ["string", "null"] },
+              "score":         { "type": "number" }
             }
           }
         }
@@ -120,7 +153,7 @@
         "additionalProperties": false,
         "properties": {
           "evidenceId": { "type": "string" },
-          "name": { "type": "string" },
+          "name":       { "type": "string" },
           "returnType": { "type": "string" },
           "params": {
             "type": "array",
@@ -135,7 +168,7 @@
             }
           },
           "throws": { "type": "array", "items": { "type": "string" } },
-          "usable": { "type": "boolean" }
+          "usable":   { "type": "boolean" }
         }
       }
     },
@@ -147,10 +180,10 @@
         "required": ["name", "type", "injection"],
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string" },
-          "type": { "type": "string" },
+          "name":      { "type": "string" },
+          "type":      { "type": "string" },
           "injection": { "enum": ["constructor", "field", "setter"] },
-          "final": { "type": "boolean" },
+          "final":     { "type": "boolean" },
           "instantiationStrategy": {
             "enum": ["constructor", "builder", "factory", "mock", "concrete", "anonymous", "none"]
           }
@@ -166,7 +199,7 @@
         "additionalProperties": false,
         "properties": {
           "field": { "type": "string" },
-          "type": { "type": "string" },
+          "type":  { "type": "string" },
           "methods": {
             "type": "array",
             "items": {
@@ -175,10 +208,10 @@
               "additionalProperties": false,
               "properties": {
                 "evidenceId": { "type": "string" },
-                "name": { "type": "string" },
-                "params": { "type": "array", "items": { "type": "string" } },
+                "name":       { "type": "string" },
+                "params":     { "type": "array", "items": { "type": "string" } },
                 "returnType": { "type": "string" },
-                "throws": { "type": "array", "items": { "type": "string" } }
+                "throws":     { "type": "array", "items": { "type": "string" } }
               }
             }
           }
@@ -190,7 +223,7 @@
       "description": "Spring slice and mock-bean strategy (only when springEnabled=true)",
       "additionalProperties": false,
       "properties": {
-        "slice": { "enum": ["WebMvcTest", "DataJpaTest", "none"] },
+        "slice":     { "enum": ["WebMvcTest", "DataJpaTest", "none"] },
         "mockBeans": { "type": "array", "items": { "type": "string" } }
       }
     },
@@ -202,13 +235,13 @@
         "required": ["id", "type", "strategy"],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string" },
-          "type": { "type": "string" },
+          "id":       { "type": "string" },
+          "type":     { "type": "string" },
           "strategy": { "enum": ["builder", "constructor", "factory", "mock"] },
-          "builderEvidence": { "type": "string" },
+          "builderEvidence":     { "type": "string" },
           "constructorEvidence": { "type": "string" },
-          "factoryEvidence": { "type": "string" },
-          "values": { "type": "object" },
+          "factoryEvidence":     { "type": "string" },
+          "values":   { "type": "object" },
           "variants": { "type": "array", "items": { "type": "string" } },
           "cycleSafe": { "type": "boolean" }
         }

@@ -10,17 +10,21 @@ Correcciones implementadas:
      debe existir). El manifest state/symbol-contracts.json se trata como
      estado auxiliar.
 
-  3. Archivos state/*.json sin schema asociado se reportan como
+  3. context-pack.schema.json valida state/context-packs/*.json
+     (uno por SUT), NO state/context-pack.json (que no existe y no
+     debe existir).
+
+  4. Archivos state/*.json sin schema asociado se reportan como
      [INFO] ... has no schema; treated as auxiliary state
      en lugar de quedar como estados ambiguos o silenciados.
 
-  4. Archivos ausentes se tratan según su origen:
+  5. Archivos ausentes se tratan según su origen:
        - Escritos por el pipeline Python (steps 1-5, 9-10, siempre) → [ERR] si faltan.
        - Escritos condicionalmente por el pipeline Python            → [SKIP] con motivo.
        - Escritos por agentes LLM (fase posterior al pipeline)       → [SKIP] con motivo.
      Solo los archivos verdaderamente runtime/opcionales reciben [SKIP].
 
-  5. Formato de salida estandarizado:
+  6. Formato de salida estandarizado:
        [OK]   state/<file>.json                 — válido
        [SKIP] <name>.json — <motivo>            — ausente pero legítimamente opcional
        [INFO] state/<file>.json ...             — auxiliar sin schema, o directorio vacío
@@ -46,7 +50,8 @@ from common import SCHEMAS_DIR
 # Schemas que NO se mapean a state/<name>.json sino que tienen lógica propia.
 # ---------------------------------------------------------------------------
 _SPECIAL_SCHEMAS: frozenset[str] = frozenset({
-    "symbol-contract",   # → valida state/symbol-contracts/*.json
+    "symbol-contract",  # → valida state/symbol-contracts/*.json
+    "context-pack",     # → valida state/context-packs/*.json
 })
 
 # ---------------------------------------------------------------------------
@@ -237,6 +242,70 @@ def validate_symbol_contracts(
 
 
 # ---------------------------------------------------------------------------
+# Validación especial: context-pack.schema.json → state/context-packs/
+# ---------------------------------------------------------------------------
+
+def validate_context_packs(
+    state_dir: Path,
+    schemas_dir: Path,
+    jsonschema,
+) -> int:
+    """Valida cada state/context-packs/<sut>.json contra context-pack.schema.json.
+
+    - Si el directorio no existe o está vacío → [INFO], sin error (exit 0).
+    - Si existe algún pack inválido → [ERR] con detalle, exit 1.
+    - No lee state/context-pack.json; ese archivo singular no existe y no
+      debe existir.
+    """
+    schema_file = schemas_dir / "context-pack.schema.json"
+    context_packs_dir = state_dir / "context-packs"
+
+    if not schema_file.exists():
+        print("[INFO] context-pack.schema.json not found; skipping context-pack validation")
+        return 0
+
+    if not context_packs_dir.exists() or not context_packs_dir.is_dir():
+        print("[INFO] state/context-packs/ has no context pack files yet")
+        return 0
+
+    pack_files = sorted(context_packs_dir.glob("*.json"))
+    if not pack_files:
+        print("[INFO] state/context-packs/ has no context pack files yet")
+        return 0
+
+    try:
+        with schema_file.open("r", encoding="utf-8") as fh:
+            schema = json.load(fh)
+    except Exception as exc:
+        print(
+            f"[ERR]  cannot load context-pack.schema.json: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    rc = 0
+    ok_count = 0
+    for pf in pack_files:
+        status, error = _validate_file(pf, schema, jsonschema)
+        if status == "OK":
+            print(f"[OK]   state/context-packs/{pf.name}")
+            ok_count += 1
+        else:
+            print(
+                f"[ERR]  state/context-packs/{pf.name}\n"
+                f"       schema: state/_schemas/context-pack.schema.json\n"
+                f"       reason: {error}",
+                file=sys.stderr,
+            )
+            rc = 1
+
+    if ok_count > 0 and rc == 0:
+        print(f"[OK]   state/context-packs/ — {ok_count} context pack(s) valid")
+
+    return rc
+
+
+# ---------------------------------------------------------------------------
 # Reporte de archivos auxiliares (sin schema)
 # ---------------------------------------------------------------------------
 
@@ -328,7 +397,12 @@ def main() -> int:
     if result != 0:
         rc = result
 
-    # ── 3. Archivos auxiliares sin schema ─────────────────────────────────────
+    # ── 3. Validación especial: context-packs/ ────────────────────────────────
+    result = validate_context_packs(state_dir, SCHEMAS_DIR, jsonschema)
+    if result != 0:
+        rc = result
+
+    # ── 4. Archivos auxiliares sin schema ─────────────────────────────────────
     report_auxiliary_files(SCHEMAS_DIR, state_dir)
 
     return rc
