@@ -50,6 +50,21 @@ state/compile-error-index.json          # parseo de fallas de Maven
 
 Escritura atómica: escribir `*.tmp` y luego `rename`. `execution-state.json` referencia los hashes SHA-256 vigentes de cada estado.
 
+## División absoluta del trabajo
+
+**Pipeline Determinista (Python)** ejecuta toda operación que produce un resultado reproducible:
+- Parseo de POM/Gradle, detección de frameworks, resolución de classpath
+- Escaneo de bytecode, enriquecimiento de símbolos, indexado semántico
+- Clasificación de clases, análisis de cobertura, priorización ROI
+- **Escritura física de archivos Java** (exclusivamente vía `test_patch_applier.py`)
+
+**Agentes LLM** ejecutan exclusivamente:
+- Inferir bodies de métodos de test desde el context-pack
+- Sintetizar reparaciones ante errores de compilación normalizados
+- Nunca invocan `javap`, nunca leen POM, nunca leen JaCoCo XML directamente
+
+Ver: `docs/deterministic-architecture.md`, `docs/token-minimization-strategy.md`, `docs/agent-json-protocol.md`.
+
 ## Phase 0 - Python pre-stage (obligatorio)
 
 Antes de cualquier agente LLM debe correr el pipeline Python una vez por commit relevante (POM o `target/classes` cambiado):
@@ -74,6 +89,28 @@ python tools/python/run_pipeline.py \
 ```
 
 Produce `build-tool-contract.json`, `archetype-profile.json`, `generated-code-index.json`, `import-whitelist.json`, `symbol-contracts/<fqcn>.json` y, si hay JaCoCo, `coverage-targets.json`. Los agentes leen solo estos JSON; no relectura de POM, classpath ni javap. Si falta cualquier archivo ⇒ `BLOCKED_PRE_STAGE_MISSING`.
+
+## Phase 0b - Aplicación de Parches (post-LLM, obligatorio)
+
+Todo cambio físico a archivos Java de test se aplica **exclusivamente** mediante:
+
+```bash
+python tools/python/test_patch_applier.py \
+  --patch  state/_patches/<FQCNTest>.patch.json \
+  --repo   <ruta-al-repo-java> \
+  --state  state \
+  --templates templates \
+  --out    state/generated-tests.json
+```
+
+**Reglas absolutas del patcher:**
+- `src/main/java/**` es prohibido — el patcher lanza `PermissionError` (exit 3) ante cualquier intento.
+- Solo escribe en directorios de test autorizados: `src/test/java`, `src/integrationTest/java`, `src/integration-test/java`, `src/testFixtures/java`.
+- Inicializa archivos nuevos desde `templates/<name>.java[.tpl]` (nunca desde cero).
+- Detecta colisiones de firmas por nombre de método — nunca sobreescribe un método existente sin intención explícita (`repair:` prefix en patchId).
+- Actualiza `state/generated-tests.json` atómicamente después de cada apply.
+
+Ver: `docs/agent-json-protocol.md` para el formato del JSON de parche.
 
 ## Precedencia de evidencia (orden estricto)
 

@@ -113,22 +113,18 @@ Run the static pre-compile linter before accepting any generated test method or 
 
 ```bash
 python tools/python/test_linter.py \
-  --test-file <path/to/TestFile.java> \
-  --whitelist state/import-whitelist.json \
-  --contracts state/symbol-contracts/ \
-  --stack-profile state/stack-profile.json
+  --test-file     <path/to/TestFile.java> \
+  --whitelist     state/import-whitelist.json \
+  --contracts     state/symbol-contracts/ \
+  --stack-profile state/stack-profile.json \
+  --index         state/index \
+  --context-pack  state/context-packs/<fqcn>.json
 ```
 
-> **NOTE:** `--stack-profile` is required by the architecture for full G5 enforcement
-> (framework feature validation against the declared stack).
-> If the local `test_linter.py` does not yet support this flag, run without it temporarily
-> and track completion of improvement 9 (stack-profile integration in `test_linter.py`):
-> ```bash
-> python tools/python/test_linter.py \
->   --test-file <path/to/TestFile.java> \
->   --whitelist state/import-whitelist.json \
->   --contracts state/symbol-contracts/
-> ```
+Flags:
+- `--stack-profile` — enables G5 (JUnit/Mockito/Spring version compatibility).
+- `--index` — loads `state/index/methods.json` as G2 fallback for types without a full contract.
+- `--context-pack` — cross-validates the linted file corresponds to the expected SUT.
 
 If the linter reports **G1** (import not whitelisted) or **G2** (symbol not in contract)
 violations → **reject the suggestion entirely**.
@@ -255,6 +251,81 @@ void testProcessName_happyPath() {
 If you cannot cite an evidence-id → the symbol is unverified → **remove that line**.
 
 ---
+
+---
+
+## TOKEN MINIMIZATION RULES
+
+These rules govern what context Copilot (and any LLM tool in this workspace)
+is allowed to use. Loading files outside these rules wastes tokens and
+introduces hallucination risk from irrelevant content.
+
+### What you MUST use as context
+
+| Need | Source | Max size |
+|------|--------|----------|
+| SUT contract, constructors, methods, builders | `state/context-packs/<fqcn>.json` | ~1500 tokens |
+| Valid imports | `allowedImports[]` in the context pack | pre-filtered |
+| Test framework + mock framework | `stack` section in the context pack | ~50 tokens |
+| Dependency injection map | `collaborators[]` in the context pack | ~200 tokens |
+| Existing test methods (to avoid collision) | `existingTests[]` in the context pack | ~50 tokens |
+| Compile errors to repair | `state/compile-error-index.json` | ~150 tokens |
+
+### What you MUST NOT load as context
+
+| File | Why forbidden |
+|------|---------------|
+| `pom.xml` (any module) | ~1500-3000 tokens; `stack-profile.json` has all needed info |
+| `target/site/jacoco/jacoco.xml` | ~10K-50K tokens; use `coverage-targets.json` only |
+| Raw `mvn` build logs | ~2K tokens; use `compile-error-index.json` (normalized) |
+| Full `.java` source of the SUT | ~2K-8K tokens; use the symbol contract instead |
+| `state/import-whitelist.json` in full | ~500 tokens; context pack pre-filters the relevant subset |
+| `state/symbol-contracts.json` (manifest) | Not authoritative; use `state/symbol-contracts/<fqcn>.json` |
+
+### Output format for Copilot-generated test suggestions
+
+When Copilot generates a test suggestion, it MUST be in the form of a JSON
+patch descriptor (see `docs/agent-json-protocol.md`), NOT as a raw Java diff.
+The patch is then applied via `test_patch_applier.py`:
+
+```bash
+# 1. Save Copilot's suggestion as a patch
+#    (or let the agent write it to state/_patches/<TestClass>.patch.json)
+
+# 2. Apply the patch deterministically
+python tools/python/test_patch_applier.py \
+  --patch  state/_patches/FooServiceTest.patch.json \
+  --repo   <repo-root> \
+  --state  state \
+  --templates templates
+
+# 3. Lint before accepting
+python tools/python/test_linter.py \
+  --test-file <path/to/FooServiceTest.java> \
+  --whitelist state/import-whitelist.json \
+  --contracts state/symbol-contracts/ \
+  --stack-profile state/stack-profile.json \
+  --index state/index
+
+# 4. Accept ONLY if exit code is 0 (no G1/G2/G5 violations)
+```
+
+### Context pack is the only authorized LLM input
+
+```
+# ✅ Correct: pass ONLY the context pack
+cat state/context-packs/com.acme.FooService.json | <LLM>
+
+# ❌ Wrong: pass the full source file
+cat src/main/java/com/acme/FooService.java | <LLM>
+
+# ❌ Wrong: pass multiple large state files
+cat state/import-whitelist.json state/dependency-graph.json | <LLM>
+```
+
+The context pack is built by `context_pack_builder.py` and contains a
+curated, minimal slice of all relevant state for ONE SUT. It is the
+single source of truth for any LLM-based generation or repair step.
 
 *These rules are enforced by the agent pipeline. Copilot suggestions that violate them
 will be rejected by the static pre-compile linter (G6) and will not be committed.*
