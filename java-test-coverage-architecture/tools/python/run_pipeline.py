@@ -16,9 +16,11 @@ Runs (in order):
   13. coverage_planner          → state/batch-plan.json
   14. incremental_map_writer    → state/incremental-map.json           (if --since)
   15. state_validator           → validates all state/*.json
+  16. context_pack_builder      → state/context-packs/<safe_fqcn>.json (one per SUT in batch)
 
-After this, the LLM only consumes state/*.json.  Token consumption drops because no
-agent re-parses POMs, classpath, javap output or JaCoCo XML.
+After this, the LLM only consumes state/context-packs/*.json.  Token consumption drops
+because no agent re-parses POMs, classpath, javap output or JaCoCo XML.  The context-pack
+is the single source of truth for LLM agents — raw source code is NEVER passed to them.
 
 Phase 1 (semantic index): step 9 projects all prior state into state/index/ so agents
 query a single consistent index instead of re-reading raw sources, eliminating
@@ -47,6 +49,7 @@ Skip names for --skip flag
   planning       step 13
   incremental    step 14  (also skipped automatically when --since is absent)
   validate       step 15
+  context        step 16  (builds state/context-packs/ — the LLM's only input)
 """
 from __future__ import annotations
 
@@ -126,7 +129,7 @@ def main() -> int:
             "Step names to skip (space-separated).  Valid names:\n"
             "  pom, archetype, generated, classpath, stack, bytecode,\n"
             "  source, jacoco, index, classification, deps, fixtures,\n"
-            "  planning, incremental, validate"
+            "  planning, incremental, validate, context"
         ),
     )
     args = ap.parse_args()
@@ -247,6 +250,13 @@ def main() -> int:
     # ── Step 15: State validator ──────────────────────────────────────────────
     if "validate" not in skip:
         rc |= run_step([HERE / "state_validator.py", "--state", args.out])
+
+    # ── Step 16: Context pack builder → state/context-packs/<safe_fqcn>.json ─
+    # Produces one minimal JSON per SUT from the batch plan.  This is the ONLY
+    # artifact LLM agents (test-intent, test-body, repair, report) may consume.
+    # No agent reads raw source code, POM, classpath, bytecode or JaCoCo XML.
+    if "context" not in skip:
+        rc |= run_step([HERE / "context_pack_builder.py", "--out", args.out])
 
     print("\nDone." if rc == 0 else "\nDone with errors.")
     return rc
