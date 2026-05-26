@@ -2,8 +2,8 @@
 
 ## Prerequisitos
 - JDK detectado correctamente (`java -version`).
-- Maven o Gradle wrapper en el repo.
-- Repo compila al menos una vez sin tests (`mvn -DskipTests package` o equivalente Gradle) para poblar `target/classes` y `target/generated-sources`.
+- **Maven** en el repo (Gradle no soportado aún en el pipeline Python; ver `skills/08-validation/build-tool-adapter.md`).
+- Repo compila al menos una vez sin tests (`mvn -DskipTests package`) para poblar `target/classes` y `target/generated-sources`.
 
 ## Paso a paso
 

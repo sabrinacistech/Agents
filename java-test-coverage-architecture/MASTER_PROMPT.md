@@ -55,13 +55,22 @@ Escritura atómica: escribir `*.tmp` y luego `rename`. `execution-state.json` re
 Antes de cualquier agente LLM debe correr el pipeline Python una vez por commit relevante (POM o `target/classes` cambiado):
 
 ```bash
+# ── Modo standalone (VS Code abierto en java-test-coverage-architecture/) ──
 mvn -q -DskipTests package
 python tools/python/run_pipeline.py \
-   --repo . \
-   --out docs/agents/java-test-coverage-architecture/state \
+   --repo <ruta-al-repo-java> \
+   --out state \
    --module <module> \
    --include-fqcn '^com\.acme\.' \
-   --jacoco-xml target/site/jacoco/jacoco.xml
+   --jacoco-xml <ruta-al-repo-java>/target/site/jacoco/jacoco.xml
+
+# ── Modo embebido (arquitectura en docs/agents/java-test-coverage-architecture/) ──
+# python docs/agents/java-test-coverage-architecture/tools/python/run_pipeline.py \
+#    --repo . \
+#    --out docs/agents/java-test-coverage-architecture/state \
+#    --module <module> \
+#    --include-fqcn '^com\.acme\.' \
+#    --jacoco-xml target/site/jacoco/jacoco.xml
 ```
 
 Produce `build-tool-contract.json`, `archetype-profile.json`, `generated-code-index.json`, `import-whitelist.json`, `symbol-contracts/<fqcn>.json` y, si hay JaCoCo, `coverage-targets.json`. Los agentes leen solo estos JSON; no relectura de POM, classpath ni javap. Si falta cualquier archivo ⇒ `BLOCKED_PRE_STAGE_MISSING`.

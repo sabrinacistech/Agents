@@ -53,11 +53,18 @@ def _now() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _extract_coverage_delta(state_dir: Path) -> dict:
-    delta = _load_safe(state_dir / "coverage-delta.json", {})
+    """Extract delta totals from coverage-delta.json.
+
+    jacoco_parser.py writes the nested format:
+      {"totals": {"lines": {"before": N, "after": N, "delta": N}, ...}}
+    We expose the per-counter delta for the cycle summary.
+    """
+    raw = _load_safe(state_dir / "coverage-delta.json", {})
+    totals = raw.get("totals", {})
     return {
-        "lines": delta.get("lines", 0),
-        "branches": delta.get("branches", 0),
-        "instructions": delta.get("instructions", 0),
+        "lines": totals.get("lines", {}).get("delta", 0),
+        "branches": totals.get("branches", {}).get("delta", 0),
+        "instructions": totals.get("instructions", {}).get("delta", 0),
     }
 
 

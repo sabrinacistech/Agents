@@ -1,5 +1,11 @@
 {
-  "before": {},
-  "after": {},
-  "delta": {}
+  "schemaVersion": 1,
+  "cycle": 0,
+  "mode": "coverage",
+  "totals": {
+    "lines": {"before": 0, "after": 0, "delta": 0},
+    "branches": {"before": 0, "after": 0, "delta": 0}
+  },
+  "perClass": [],
+  "regressions": []
 }

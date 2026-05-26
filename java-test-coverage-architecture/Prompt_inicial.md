@@ -1,3 +1,24 @@
+<!-- ╔══════════════════════════════════════════════════════════════════╗
+     ║  MODO DE USO — elige el bloque que corresponde a tu setup      ║
+     ╠══════════════════════════════════════════════════════════════════╣
+     ║  STANDALONE: VS Code abierto en java-test-coverage-architecture/║
+     ║  EMBEBIDO:   arquitectura en docs/agents/java-test-coverage-    ║
+     ║              architecture/ dentro de tu proyecto Java           ║
+     ╚══════════════════════════════════════════════════════════════════╝ -->
+
+<!-- ── STANDALONE (descomentar este bloque y borrar el de EMBEBIDO) ── -->
+Actuá como el **Coverage Orchestrator** definido en `MASTER_PROMPT.md`.
+
+Cargá y aplicá obligatoriamente:
+- `MASTER_PROMPT.md`
+- `agents/coverage-orchestrator.md`
+- `docs/python-pipeline.md`
+- `docs/performance-tuning.md`
+- `docs/archetype-policy.md`
+- Los skills de la fase activa bajo `skills/**`
+- Los schemas bajo `state/_schemas/**`
+
+<!-- ── EMBEBIDO (descomentar si la arquitectura está en docs/agents/...) ──
 Actuá como el **Coverage Orchestrator** definido en
 `docs/agents/java-test-coverage-architecture/MASTER_PROMPT.md`.
 
@@ -9,6 +30,7 @@ Cargá y aplicá obligatoriamente:
 - `docs/agents/java-test-coverage-architecture/docs/archetype-policy.md`
 - Los skills de la fase activa bajo `docs/agents/java-test-coverage-architecture/skills/**`
 - Los schemas bajo `docs/agents/java-test-coverage-architecture/state/_schemas/**`
+── -->
 
 ## Parámetros de ejecución
 - repo: <ruta o "workspace actual">
@@ -28,14 +50,24 @@ Cargá y aplicá obligatoriamente:
 Antes de actuar como Orchestrator, verificá que existan los `state/*.json` precomputados por el pipeline determinista. Si faltan, ejecutá (o pedí ejecutar):
 
 ```powershell
-mvn -q -DskipTests package
-python docs/agents/java-test-coverage-architecture/tools/python/run_pipeline.py `
-  --repo . `
-  --out docs/agents/java-test-coverage-architecture/state `
+# ── Modo standalone (VS Code en java-test-coverage-architecture/) ──
+mvn -q -DskipTests package   # ejecutar desde el repo Java
+python tools/python/run_pipeline.py `
+  --repo <ruta-al-repo-java> `
+  --out state `
   --module <module> `
   --include-fqcn '<regex>' `
-  --jacoco-xml target/site/jacoco/jacoco.xml `
+  --jacoco-xml <ruta-al-repo-java>/target/site/jacoco/jacoco.xml `
   --coverage-mode <coverage|branch-coverage|mutation-hardening>
+
+# ── Modo embebido (arquitectura en docs/agents/java-test-coverage-architecture/) ──
+# python docs/agents/java-test-coverage-architecture/tools/python/run_pipeline.py `
+#   --repo . `
+#   --out docs/agents/java-test-coverage-architecture/state `
+#   --module <module> `
+#   --include-fqcn '<regex>' `
+#   --jacoco-xml target/site/jacoco/jacoco.xml `
+#   --coverage-mode <coverage|branch-coverage|mutation-hardening>
 ```
 
 Esto produce:

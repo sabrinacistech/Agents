@@ -1,6 +1,13 @@
 {
-  "currentPhase": "discovery",
+  "schemaVersion": 1,
   "mode": "coverage",
   "cycle": 0,
-  "status": "INITIALIZED"
+  "phase": "discovery",
+  "budget": {
+    "maxCycles": 10,
+    "maxMinutesPerCycle": 10
+  },
+  "consecutiveZeroDeltaCycles": 0,
+  "compileFailRateWindow": [],
+  "checkpoints": []
 }

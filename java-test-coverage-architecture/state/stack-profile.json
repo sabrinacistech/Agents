@@ -1,0 +1,9 @@
+{
+  "java": "unknown",
+  "buildTool": "maven",
+  "modules": [],
+  "presets": {
+    "imports.allowed": [],
+    "imports.forbidden": []
+  }
+}

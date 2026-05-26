@@ -3,10 +3,19 @@
 ## Objetivo
 Aislar Maven vs Gradle detrás de un contrato común `state/build-tool-contract.json` para que el resto del sistema no asuma sintaxis.
 
+> ⚠️ **Estado de soporte actual**
+> El **pipeline Python (`tools/python/`)** implementa soporte completo **solo para Maven**.
+> Los scripts `pom_parser.py`, `classpath_resolver.py`, `bytecode_scanner.py` y
+> `archetype_detector.py` invocan comandos `mvn` directamente.
+> **Gradle no está soportado aún en el pipeline determinista.**
+> Si el repositorio objetivo es Gradle-only, abortar con
+> `BLOCKED_GRADLE_NOT_SUPPORTED_IN_PIPELINE` y notificar al usuario.
+> El soporte Gradle (Kotlin DSL + `gradlew`) está marcado como **pendiente**.
+
 ## Detección
-- Maven: existe `pom.xml` en raíz o módulo.
-- Gradle: existe `build.gradle` o `build.gradle.kts`, o wrapper `gradlew`.
-- Multi: si ambos, registrar `priority: maven` salvo override en config.
+- Maven: existe `pom.xml` en raíz o módulo. **→ Soporte completo (pipeline Python).**
+- Gradle: existe `build.gradle` o `build.gradle.kts`, o wrapper `gradlew`. **→ Soporte pendiente; abortar pipeline con `BLOCKED_GRADLE_NOT_SUPPORTED_IN_PIPELINE`.**
+- Multi: si ambos existen, tratar como Maven (prioridad `maven`) y loguear advertencia.
 
 ## Comandos abstractos → concretos
 

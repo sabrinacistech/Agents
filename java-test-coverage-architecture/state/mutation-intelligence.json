@@ -1,5 +1,7 @@
 {
-  "enabled": false,
-  "tool": "PIT",
-  "targets": []
+  "schemaVersion": 1,
+  "runId": "initial",
+  "module": "",
+  "survivors": [],
+  "blocked": []
 }

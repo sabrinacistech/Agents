@@ -1,10 +1,12 @@
 {
-  "tool": null,
-  "javaVersion": null,
-  "testFramework": null,
-  "mockFramework": null,
-  "coverageTool": null,
-  "moduleCommand": null,
-  "coverageCommand": null,
-  "coverageXmlPath": null
+  "schemaVersion": 1,
+  "tool": "maven",
+  "rootPom": "",
+  "modules": [],
+  "java": "unknown",
+  "jacoco": {
+    "configured": false,
+    "reportXml": "target/site/jacoco/jacoco.xml",
+    "execFile": "target/jacoco.exec"
+  }
 }

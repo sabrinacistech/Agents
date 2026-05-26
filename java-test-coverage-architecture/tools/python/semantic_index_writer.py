@@ -164,22 +164,61 @@ def build_imports_index(whitelist_path: Path) -> dict:
 def build_dependencies_index(dep_graph_path: Path) -> dict:
     """Project dependency-graph.json into index/dependencies.json.
 
-    The dependency graph tracks DI relationships used by Generation and Planning.
-    We normalise the structure so every agent uses the same field names.
+    Supports two source formats:
+
+    1. Schema-canonical format (written by LLM agents, validated by schema):
+       {"schemaVersion": 1, "graphs": [{"sut": "FQCN", "dependencies": [...], ...}]}
+
+    2. Legacy flat format (written by some older agent versions):
+       {"classes": {"FQCN": {"uses": [...], "injects": [...], ...}}}
+
+    Both are normalised to the same index structure:
+      FQCN → {uses, implements, extends, injects, repositories, clients, exceptions}
     """
-    dg = _load_safe(dep_graph_path, {"classes": {}})
-    raw = dg.get("classes", {})
+    dg = _load_safe(dep_graph_path, {})
     normalised: dict[str, dict] = {}
-    for fqcn, data in raw.items():
-        normalised[fqcn] = {
-            "uses": data.get("uses", []),
-            "implements": data.get("implements", []),
-            "extends": data.get("extends"),
-            "injects": data.get("injects", []),          # DI constructor/field deps
-            "repositories": data.get("repositories", []),
-            "clients": data.get("clients", []),
-            "exceptions": data.get("exceptions", []),
-        }
+
+    if "graphs" in dg:
+        # ── Schema-canonical format ────────────────────────────────────────────
+        for entry in dg.get("graphs", []):
+            fqcn = entry.get("sut")
+            if not fqcn:
+                continue
+            deps = entry.get("dependencies", [])
+            collab = entry.get("collaboratorUsage", [])
+            # DI injectables: constructor / field / setter injected types
+            injects = [d["type"] for d in deps if "type" in d]
+            # Collaborator types actually called in the SUT
+            uses = [c["type"] for c in collab if "type" in c]
+            # Heuristic: classify repositories and external clients from collab types
+            repositories = [
+                t for t in uses
+                if any(suffix in t for suffix in ("Repository", "Repo", "Dao", "DAO"))
+            ]
+            clients = [c for c in entry.get("externalClients", [])]
+            normalised[fqcn] = {
+                "uses": uses,
+                "implements": entry.get("implements", []),
+                "extends": entry.get("extends"),
+                "injects": injects,
+                "repositories": repositories,
+                "clients": clients,
+                "exceptions": [],   # exceptions not in schema-format; populated by source enricher
+            }
+    else:
+        # ── Legacy flat format ─────────────────────────────────────────────────
+        raw = dg.get("classes", {})
+        for fqcn, data in raw.items():
+            normalised[fqcn] = {
+                "uses": data.get("uses", []),
+                "implements": data.get("implements", []),
+                "extends": data.get("extends"),
+                "injects": data.get("injects", []),
+                "repositories": data.get("repositories", []),
+                "clients": data.get("clients", []),
+                "exceptions": data.get("exceptions", []),
+            }
+
     return {
         "version": VERSION,
         "generatedAt": _now(),
