@@ -19,7 +19,11 @@
           "factoryEvidence": { "type": "string" },
           "values": { "type": "object" },
           "variants": { "type": "array", "items": { "type": "string" } },
-          "cycleSafe": { "type": "boolean" }
+          "cycleSafe": { "type": "boolean" },
+          "degraded": {
+            "type": "boolean",
+            "description": "True when the builder fell back to a best-effort mock because no valid instantiation strategy (builder/constructor/factory/legit mock) was found. Downstream consumers must treat this fixture as fragile."
+          }
         }
       }
     }

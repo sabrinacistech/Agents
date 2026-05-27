@@ -17,6 +17,24 @@ from typing import Any, Iterable
 
 SCHEMAS_DIR = Path(__file__).resolve().parents[1].parent / "state" / "_schemas"
 
+IS_WINDOWS = os.name == "nt"
+
+
+def _configure_stdio_utf8() -> None:
+    """Force stdout/stderr to utf-8 so non-ASCII output never breaks cp1252 consoles."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
+_configure_stdio_utf8()
+
 
 # ── Structured logging (P4.0) ─────────────────────────────────────────────────
 
@@ -144,8 +162,30 @@ def validate(state_name: str, data: Any) -> None:
 
 
 def run(cmd: list[str], cwd: Path | None = None, timeout: int = 600) -> subprocess.CompletedProcess:
+    """Run a subprocess with UTF-8 decoding (Windows-safe).
+
+    Differences vs ``subprocess.run`` defaults:
+    - ``encoding="utf-8"`` so non-ASCII output never explodes on cp1252.
+    - ``errors="replace"`` so a stray invalid byte does not kill the tool.
+    - On Windows, ``.cmd``/``.bat`` shims (e.g. mvn.cmd) are resolved through
+      ``shutil.which`` so the launcher does not need a shell.
+    """
+    resolved = list(cmd)
+    if IS_WINDOWS and resolved:
+        head = resolved[0]
+        # Resolve bare names to absolute path so .cmd/.bat shims work without shell=True.
+        if not os.path.isabs(head) and os.sep not in head and "/" not in head:
+            found = shutil.which(head)
+            if found:
+                resolved[0] = found
     return subprocess.run(
-        cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, timeout=timeout
+        resolved,
+        cwd=str(cwd) if cwd else None,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
     )
 
 
@@ -154,6 +194,104 @@ def find_tool(name: str) -> str:
     if not p:
         raise FileNotFoundError(f"Tool not on PATH: {name}")
     return p
+
+
+def mvn_executable() -> str:
+    """Return the Maven launcher for this platform.
+
+    Windows ships Maven as ``mvn.cmd`` (a batch wrapper). Calling ``mvn`` via
+    ``subprocess.run`` without ``shell=True`` fails on Windows because the
+    ``PATHEXT`` lookup is not performed for raw executables.
+    """
+    candidates = ("mvn.cmd", "mvn.bat", "mvn") if IS_WINDOWS else ("mvn",)
+    for name in candidates:
+        path = shutil.which(name)
+        if path:
+            return path
+    raise FileNotFoundError(
+        "Maven launcher not found on PATH. "
+        "Install Maven and ensure 'mvn' (or 'mvn.cmd' on Windows) is reachable."
+    )
+
+
+def long_path(p: Path | str) -> str:
+    """Return a Windows long-path-safe string for ``p``.
+
+    On Windows the legacy MAX_PATH limit is 260 characters. Prefixing an
+    absolute path with ``\\\\?\\`` opts it into the long-path API (~32k).
+    On POSIX this is a no-op.
+    """
+    s = str(p)
+    if not IS_WINDOWS:
+        return s
+    try:
+        absolute = os.path.abspath(s)
+    except (OSError, ValueError):
+        return s
+    if absolute.startswith("\\\\?\\"):
+        return absolute
+    if absolute.startswith("\\\\"):
+        # UNC path: \\server\share → \\?\UNC\server\share
+        return "\\\\?\\UNC\\" + absolute.lstrip("\\")
+    return "\\\\?\\" + absolute
+
+
+def resolve_target_dirs(repo: Path, module: str | None = None) -> list[Path]:
+    """Locate Maven ``target/classes`` directories under ``repo``.
+
+    Resolution order:
+      1. If ``module`` names a real subdir, use ``repo/module/target/classes``.
+      2. If ``module`` is ``None`` / ``"."`` / ``""``, use the monolithic
+         ``repo/target/classes`` when present.
+      3. Fall back to scanning every ``pom.xml`` (via :func:`find_pom_modules`)
+         and returning each module's ``target/classes`` that exists.
+
+    Returns only directories that actually exist; callers should treat an
+    empty list as "nothing built yet — run mvn -DskipTests package first".
+    """
+    repo = repo.resolve()
+    candidates: list[Path] = []
+
+    if module and module not in (".", ""):
+        explicit = repo / module / "target" / "classes"
+        if explicit.is_dir():
+            return [explicit]
+        # Module name given but no build output — fall through, caller decides.
+
+    monolithic = repo / "target" / "classes"
+    if monolithic.is_dir():
+        candidates.append(monolithic)
+
+    for mod_dir in find_pom_modules(repo):
+        tc = mod_dir / "target" / "classes"
+        if tc.is_dir() and tc not in candidates:
+            candidates.append(tc)
+
+    return candidates
+
+
+def normalize_params(params: Any) -> list[dict]:
+    """Coerce a params list into the structured ``[{type, name?}]`` shape.
+
+    Some intermediate artifacts historically stored params as plain
+    ``["String", "int"]``. Downstream consumers expect dicts and crash on
+    ``str.get(...)``. This helper is idempotent and safe to call defensively.
+    """
+    if not params:
+        return []
+    out: list[dict] = []
+    for p in params:
+        if isinstance(p, dict):
+            if "type" in p:
+                out.append(p)
+            else:
+                # Unknown shape — keep deterministic fallback rather than raising.
+                out.append({"type": "java.lang.Object"})
+        elif isinstance(p, str):
+            out.append({"type": p})
+        else:
+            out.append({"type": "java.lang.Object"})
+    return out
 
 
 def cache_get(state_dir: Path, key: str, input_hashes: dict[str, str]) -> Any | None:

@@ -39,7 +39,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from common import SCHEMAS_DIR, atomic_write_json, load_json, validate
+from common import SCHEMAS_DIR, atomic_write_json, load_json, normalize_params, validate
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
@@ -232,7 +232,9 @@ def _build_graph(
     best_ctor = _best_constructor(contract.get("constructors", []))
     if best_ctor:
         ctor_eid: str = best_ctor.get("evidenceId", "")
-        for idx, param in enumerate(best_ctor.get("params", [])):
+        # normalize_params() coerces legacy ["String", ...] shape into [{type: ...}, ...]
+        # so .get() never crashes on a stray string element.
+        for idx, param in enumerate(normalize_params(best_ctor.get("params", []))):
             ptype: str = param.get("type", "java.lang.Object")
             pname: str | None = param.get("name")
             field_name = _derive_field_name(pname, ptype)
@@ -270,7 +272,10 @@ def _build_graph(
             {
                 "evidenceId": m.get("evidenceId", ""),
                 "name": m.get("name", ""),
-                "params": [p.get("type", "") for p in m.get("params", [])],
+                # Schema requires params as string[]. normalize_params() defends
+                # against legacy method indexes where params arrived as plain
+                # strings instead of {type, name} dicts.
+                "params": [p.get("type", "") for p in normalize_params(m.get("params", []))],
                 "returnType": m.get("returnType", "void"),
                 "throws": m.get("throws", []),
             }

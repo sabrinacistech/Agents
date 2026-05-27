@@ -14,7 +14,14 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import atomic_write_json, find_pom_modules, run, validate
+from common import (
+    atomic_write_json,
+    find_pom_modules,
+    long_path,
+    mvn_executable,
+    run,
+    validate,
+)
 
 
 def _list_classes_in_jar(jar: Path) -> tuple[set[str], set[str]]:
@@ -76,13 +83,15 @@ def _walk_source_packages(roots: list[Path]) -> set[str]:
     for root in roots:
         if not root.exists():
             continue
-        for p, _, files in os.walk(root):
+        # long_path() opts into Windows long-path API for generated-sources trees
+        # that easily exceed MAX_PATH (260 chars) under target/.
+        for p, _, files in os.walk(long_path(root)):
             for fn in files:
                 if not fn.endswith(".java"):
                     continue
                 fp = Path(p) / fn
                 try:
-                    with fp.open("r", encoding="utf-8", errors="ignore") as f:
+                    with open(long_path(fp), "r", encoding="utf-8", errors="ignore") as f:
                         for line in f:
                             line = line.strip()
                             if line.startswith("package "):
@@ -96,8 +105,10 @@ def _walk_source_packages(roots: list[Path]) -> set[str]:
 def resolve_module(mod_dir: Path) -> dict:
     cp_file = mod_dir / "target" / "cp.txt"
     cp_file.parent.mkdir(parents=True, exist_ok=True)
+    # Use mvn_executable() so Windows resolves mvn.cmd correctly; bare "mvn"
+    # would fail subprocess lookup because PATHEXT is not honored without a shell.
     cmd = [
-        "mvn", "-q", "-pl", ".", "dependency:build-classpath",
+        mvn_executable(), "-q", "-pl", ".", "dependency:build-classpath",
         "-DincludeScope=test", f"-Dmdep.outputFile={cp_file}",
     ]
     rc = run(cmd, cwd=mod_dir, timeout=900).returncode

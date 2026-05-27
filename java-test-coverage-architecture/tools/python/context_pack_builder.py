@@ -27,7 +27,7 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import _TimedRun, atomic_write_json, emit_tool_summary, fail, load_json, validate  # noqa: E402,F401
+from common import _TimedRun, atomic_write_json, emit_tool_summary, fail, load_json, normalize_params, validate  # noqa: E402,F401
 
 SCHEMA_NAME = "context-pack"
 DEFAULT_MAX_IMPORTS = 40
@@ -241,11 +241,15 @@ def extract_symbol_contract(
     if not contract:
         return [], []
 
+    # normalize_params() coerces any legacy ["String", ...] input into
+    # [{"type": "String"}, ...] so the downstream compact-pack builder
+    # (which assumes dicts) and the context-pack schema (which requires
+    # [{type, name?}]) both stay valid.
     constructors = [
         {
             "evidenceId": c["evidenceId"],
             "visibility": c.get("visibility", "public"),
-            "params": c.get("params", []),
+            "params": normalize_params(c.get("params", [])),
             "throws": c.get("throws", []),
         }
         for c in contract.get("constructors", [])
@@ -256,7 +260,7 @@ def extract_symbol_contract(
             "evidenceId": m["evidenceId"],
             "name": m["name"],
             "returnType": m.get("returnType", "void"),
-            "params": m.get("params", []),
+            "params": normalize_params(m.get("params", [])),
             "throws": m.get("throws", []),
             "usable": bool(m.get("usable", True)),
         }
@@ -576,9 +580,11 @@ def build_compact_pack(pack: dict, max_imports: int) -> tuple[dict, bool]:
 
     ctor_rows: list[list] = []
     for c in pack.get("constructors", []):
+        # Belt-and-suspenders: extract_symbol_contract already normalises, but
+        # packs built outside this module may still carry string params.
         params = [
             [p.get("type", ""), p.get("name")] if p.get("name") else [p.get("type", "")]
-            for p in c.get("params", [])
+            for p in normalize_params(c.get("params", []))
         ]
         ctor_rows.append([_eid_idx(c["evidenceId"]), params])
 
@@ -586,7 +592,7 @@ def build_compact_pack(pack: dict, max_imports: int) -> tuple[dict, bool]:
     for m in pack.get("methods", []):
         if m.get("usable") is False:
             continue
-        args = [p.get("type", "") for p in m.get("params", [])]
+        args = [p.get("type", "") for p in normalize_params(m.get("params", []))]
         meth_rows.append([
             _eid_idx(m["evidenceId"]),
             m.get("name", ""),

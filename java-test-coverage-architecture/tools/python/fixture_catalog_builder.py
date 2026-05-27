@@ -21,7 +21,8 @@ Strategy selection (strict, evidence-only, priority order)
   4. kind == interface OR kind == abstract AND Mockito available
        → strategy: "mock"
   5. All other cases (private-only ctors, Mockito unavailable, etc.)
-       → strategy: "none"
+       → strategy: "mock", degraded: true, cycleSafe: false
+       (schema enum forbids "none"; downstream must treat as fragile)
 
 Strict prohibitions
 -------------------
@@ -322,11 +323,21 @@ def _build_fixture(
             "cycleSafe": True,
         }
 
-    # ── Strategy 5: none ──────────────────────────────────────────────────────
+    # ── Strategy 5: degraded mock ─────────────────────────────────────────────
+    # No builder, no public ctor, no static factory, and not a clean
+    # interface/abstract+Mockito case. The schema's `strategy` enum does not
+    # admit "none", so we fall back to a degraded mock and flag it explicitly:
+    #   - strategy:  "mock"          (only enum-valid choice for this case)
+    #   - degraded:  true            (consumers must treat as fragile)
+    #   - cycleSafe: false           (no guarantees about transitive cycles)
+    #   - variants:  empty           (no scenarios are safe to enumerate)
+    # If Mockito itself is unavailable, mocking will simply fail at runtime —
+    # the orchestrator should skip generation rather than retry.
     return {
         "id": fqcn,
         "type": fqcn,
-        "strategy": "none",
+        "strategy": "mock",
+        "degraded": True,
         "values": {},
         "variants": [],
         "cycleSafe": False,

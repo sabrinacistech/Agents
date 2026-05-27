@@ -31,7 +31,7 @@
               "junit": { "enum": ["4", "5"] }
             }
           },
-          "changelog": { "type": "string" },
+          "changelog": { "type": ["string", "null"] },
           "rulesApplied": { "type": "array", "items": { "type": "string" } },
           "discrepancies": { "type": "array" }
         }

@@ -12,7 +12,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import atomic_write_json, find_tool, load_json, run, validate
+from common import (
+    atomic_write_json,
+    find_tool,
+    load_json,
+    resolve_target_dirs,
+    run,
+    validate,
+)
 
 DESC_RE = re.compile(r"descriptor:\s*(\S+)")
 ACCESS_RE = re.compile(
@@ -20,6 +27,10 @@ ACCESS_RE = re.compile(
     r"((?:static|final|abstract|synchronized|native|strictfp|transient|volatile)\s*)*"
     r"(?P<rest>[^;{]+);?$"
 )
+# Matches the class/interface/enum declaration line emitted by `javap`.
+# We search for this in the full output because the first non-empty line is
+# usually `Compiled from "Foo.java"`, which does not declare the type.
+TYPE_DECL_RE = re.compile(r"\b(class|interface|enum)\s+([\w\.$]+)")
 
 
 def _eid(prefix: str, key: str) -> str:
@@ -64,24 +75,35 @@ def scan_class(class_file: Path, javap: str) -> dict | None:
     if r.returncode != 0:
         return None
     lines = r.stdout.splitlines()
-    # First non-empty header line: "public class com.foo.Bar { ..."
-    header = next((l for l in lines if l.strip()), "")
+    # `javap` typically prints `Compiled from "Foo.java"` first, then the type
+    # declaration line. Skip ahead to the first line that actually declares a
+    # class / interface / enum — taking the first non-empty line breaks here.
+    header = ""
+    header_idx = -1
+    for idx, line in enumerate(lines):
+        if TYPE_DECL_RE.search(line):
+            header = line
+            header_idx = idx
+            break
+    if not header:
+        return None
     kind = "class"
-    if "interface " in header:
+    if " interface " in f" {header} ":
         kind = "interface"
     elif "abstract class " in header:
         kind = "abstract"
-    elif "enum " in header:
+    elif " enum " in f" {header} ":
         kind = "enum"
-    # Extract FQCN
-    m = re.search(r"(class|interface|enum)\s+([\w\.]+)", header)
+    m = TYPE_DECL_RE.search(header)
     if not m:
         return None
     fqcn = m.group(2)
+    # Skip past the header so member parsing starts on the next line.
+    member_start = header_idx + 1
 
     constructors: list[dict] = []
     methods: list[dict] = []
-    i = 0
+    i = member_start
     while i < len(lines):
         line = lines[i].strip()
         nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
@@ -171,7 +193,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--module", required=True, help="module dir name")
+    ap.add_argument(
+        "--module",
+        default=None,
+        help=(
+            "Module dir name. Omit (or pass '.') for monolithic repos where "
+            "target/classes lives at the repo root."
+        ),
+    )
     ap.add_argument(
         "--include",
         default=".*",
@@ -181,10 +210,15 @@ def main() -> int:
 
     repo = Path(args.repo).resolve()
     state_dir = Path(args.out).resolve()
-    mod = repo / args.module
-    classes_dir = mod / "target" / "classes"
-    if not classes_dir.exists():
-        print(f"[FAIL] target/classes missing for {args.module}. Run mvn -DskipTests package first.", file=sys.stderr)
+
+    classes_dirs = resolve_target_dirs(repo, args.module)
+    if not classes_dirs:
+        label = args.module or "<root>"
+        print(
+            f"[FAIL] no target/classes found under {repo} (module={label}). "
+            "Run `mvn -DskipTests package` first.",
+            file=sys.stderr,
+        )
         return 2
 
     javap = find_tool("javap")
@@ -194,27 +228,33 @@ def main() -> int:
 
     n = 0
     written: list[dict] = []
-    for cf in classes_dir.rglob("*.class"):
-        # Skip nested/synthetic
-        if "$" in cf.name:
-            continue
-        contract = scan_class(cf, javap)
-        if not contract:
-            continue
-        if not include.search(contract["fqcn"]):
-            continue
-        try:
-            validate("symbol-contract", contract)
-        except Exception as e:
-            print(f"[WARN] schema failed for {contract['fqcn']}: {e}", file=sys.stderr)
-        atomic_write_json(out_dir / f"{contract['fqcn']}.json", contract)
-        written.append({
-            "fqcn": contract["fqcn"],
-            "kind": contract.get("kind", "class"),
-            "file": f"{contract['fqcn']}.json",
-            "instantiation": contract.get("instantiation", {}).get("strategy", "unknown"),
-        })
-        n += 1
+    seen_fqcns: set[str] = set()
+    for classes_dir in classes_dirs:
+        for cf in classes_dir.rglob("*.class"):
+            # Skip nested/synthetic
+            if "$" in cf.name:
+                continue
+            contract = scan_class(cf, javap)
+            if not contract:
+                continue
+            if not include.search(contract["fqcn"]):
+                continue
+            if contract["fqcn"] in seen_fqcns:
+                # Same class compiled into multiple modules — keep the first.
+                continue
+            seen_fqcns.add(contract["fqcn"])
+            try:
+                validate("symbol-contract", contract)
+            except Exception as e:
+                print(f"[WARN] schema failed for {contract['fqcn']}: {e}", file=sys.stderr)
+            atomic_write_json(out_dir / f"{contract['fqcn']}.json", contract)
+            written.append({
+                "fqcn": contract["fqcn"],
+                "kind": contract.get("kind", "class"),
+                "file": f"{contract['fqcn']}.json",
+                "instantiation": contract.get("instantiation", {}).get("strategy", "unknown"),
+            })
+            n += 1
 
     # Write/update the manifest (state/symbol-contracts.json) so it reflects
     # the per-FQCN files just written. Agents load individual files by FQCN;

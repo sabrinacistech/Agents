@@ -11,7 +11,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from common import atomic_write_json, find_pom_modules, validate
+from common import atomic_write_json, find_pom_modules, long_path, validate
 
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
@@ -102,7 +102,9 @@ def scan_module(pom_path: Path) -> dict:
     ):
         if not gen_root.exists():
             continue
-        for path, _, files in os.walk(gen_root):
+        # long_path() prefixes \\?\ on Windows so deeply nested OpenAPI/CXF
+        # generated trees (frequently > MAX_PATH = 260) are still walkable.
+        for path, _, files in os.walk(long_path(gen_root)):
             for fn in files:
                 if not fn.endswith(".java"):
                     continue
@@ -111,7 +113,7 @@ def scan_module(pom_path: Path) -> dict:
                 try:
                     pkg = ""
                     cls = fp.stem
-                    with fp.open("r", encoding="utf-8", errors="ignore") as f:
+                    with open(long_path(fp), "r", encoding="utf-8", errors="ignore") as f:
                         for line in f:
                             line = line.strip()
                             if line.startswith("package "):
