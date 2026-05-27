@@ -86,6 +86,45 @@ _BODY_FORBIDDEN = (
 )
 
 
+def _normalize_sut(sut: Any) -> str | None:
+    """Accept sut as either a plain FQCN string or a structured {fqcn: ...} object.
+
+    Centralizes the normalization so equality checks and rendering use the same key
+    regardless of which shape the agent / context-pack chose.
+    """
+    if sut is None:
+        return None
+    if isinstance(sut, str):
+        return sut
+    if isinstance(sut, dict):
+        f = sut.get("fqcn")
+        return f if isinstance(f, str) else None
+    return None
+
+
+def sanitize_java_body(text: str) -> str:
+    """Undo common over-escaping artefacts produced by LLM JSON serialization.
+
+    Some agents double-escape when streaming JSON on Windows pipes, producing
+    literal "\\n" / "\\t" / "\\\"" sequences on disk. We do NOT touch real `\\` —
+    only the specific over-escape patterns observed in practice.
+    """
+    if not text or "\\" not in text:
+        return text
+    out = (
+        text
+        .replace("\\\\n", "\n")
+        .replace("\\\\t", "\t")
+        .replace("\\\\r", "")
+        .replace("\\\\\"", "\"")
+    )
+    # Single-escape fallback: if a body still has literal "\\n" but NO real newlines,
+    # the agent emitted escaped sequences that survived json.loads — unescape them.
+    if "\\n" in out and "\n" not in out:
+        out = out.replace("\\n", "\n").replace("\\t", "\t").replace("\\\"", "\"")
+    return out
+
+
 def _validate_body(body: str) -> None:
     if not body:
         return
@@ -212,7 +251,7 @@ def _indent_body(body: str) -> str:
 
 
 def _render_method(m: dict) -> str:
-    body_raw = (m.get("body") or "").strip()
+    body_raw = sanitize_java_body((m.get("body") or "")).strip()
     _validate_body(body_raw)
     anns = m.get("annotations") or ["@Test"]
     ann_lines = "\n".join(f"    {a}" for a in anns)
@@ -331,7 +370,10 @@ def apply_patch(
     dry_run: bool = False,
 ) -> dict:
     patch_id: str = patch.get("patchId") or f"patch:{uuid.uuid4().hex[:12]}"
-    sut: str = patch["sut"]
+    sut = _normalize_sut(patch.get("sut"))
+    if not sut:
+        raise ValueError("patch.sut missing or unparseable (need string or {fqcn})")
+    patch["sut"] = sut  # canonicalize for downstream renderers / report
     test_class: str = patch["testClass"]
     fields: list[dict] = patch.get("fields") or []
     methods: list[dict] = patch.get("methods") or []
@@ -549,9 +591,10 @@ def main() -> int:
         except Exception as exc:
             print(f"[FAIL] Cannot load context-pack: {exc}", file=sys.stderr)
             return 2
-        # Structural SUT identity check
-        cp_sut = context_pack.get("sut")
-        patch_sut = patch.get("sut")
+        # Structural SUT identity check — normalize both sides so the comparison
+        # works whether the agent emitted "com.acme.X" or {"fqcn":"com.acme.X"}.
+        cp_sut = _normalize_sut(context_pack.get("sut"))
+        patch_sut = _normalize_sut(patch.get("sut"))
         if cp_sut != patch_sut:
             print(
                 f"[BLOCKED] patch.sut '{patch_sut}' does not match "

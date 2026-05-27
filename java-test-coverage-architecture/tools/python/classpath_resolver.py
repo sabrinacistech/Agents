@@ -157,7 +157,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     modules = find_pom_modules(repo)
-    if args.module:
+    if args.module and args.module not in (".", ""):
         modules = [m for m in modules if m.name == args.module]
     if not modules:
         print("[FAIL] no Maven modules", file=sys.stderr)

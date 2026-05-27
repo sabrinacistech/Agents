@@ -58,6 +58,23 @@ ALLOWED_CALLS = {
     "contains", "add", "put", "get", "orElse", "orElseThrow",
 }
 
+# Static-import owners always considered safe regardless of whitelist contents.
+# Avoids IMPORT_NOT_WHITELISTED churn on every regenerated test for ubiquitous
+# assertion / mocking helpers (AssertJ, Mockito static, Hamcrest, JUnit assertions).
+ALLOWED_STATIC_OWNER_PREFIXES: tuple[str, ...] = (
+    "org.assertj.core.api.",
+    "org.mockito.",
+    "org.mockito.Mockito",
+    "org.mockito.ArgumentMatchers",
+    "org.mockito.BDDMockito",
+    "org.hamcrest.",
+    "org.hamcrest.MatcherAssert",
+    "org.hamcrest.Matchers",
+    "org.junit.jupiter.api.Assertions",
+    "org.junit.jupiter.api.Assumptions",
+    "org.junit.Assert",
+)
+
 # ── G5 framework import prefixes ──────────────────────────────────────────────
 _G5_JUNIT5_PREFIXES = ("org.junit.jupiter.",)
 _G5_JUNIT4_PREFIXES = (
@@ -258,7 +275,8 @@ def check_g5(stack: dict, imports_list: list[str], text: str) -> list[dict]:
 def check_context_pack(cp: dict, test_file: Path) -> list[dict]:
     """Emit a warning-level violation if the context pack SUT doesn't align with the test file name."""
     warnings: list[dict] = []
-    sut_fqcn: str = (cp.get("sut") or {}).get("fqcn") or cp.get("fqcn") or ""
+    sut_raw = cp.get("sut") or ""
+    sut_fqcn: str = (sut_raw.get("fqcn") if isinstance(sut_raw, dict) else sut_raw) or cp.get("fqcn") or ""
     if not sut_fqcn:
         return warnings
     expected_simple = sut_fqcn.rsplit(".", 1)[-1] + "Test"
@@ -307,6 +325,7 @@ def lint(
         target = m.group(2)
         if is_static:
             static_imports.add(target)
+            continue
         if target.endswith(".*"):
             pkg = target[:-2]
             if pkg not in packages:
@@ -331,6 +350,11 @@ def lint(
 
     for target in static_imports:
         owner = target.rsplit(".", 1)[0]
+        # Allow ubiquitous test-framework static helpers without forcing them
+        # through the whitelist (avoids false positives on AssertJ/Mockito/etc.).
+        if any(target.startswith(p) or owner.startswith(p)
+               for p in ALLOWED_STATIC_OWNER_PREFIXES):
+            continue
         if owner not in classes and owner.rsplit(".", 1)[0] not in packages:
             violations.append({
                 "gate": "G1",
@@ -475,9 +499,24 @@ def main() -> int:
     )
     ap.add_argument(
         "--test-file",
-        required=True,
+        required=False,
         metavar="PATH",
-        help="Java test file to lint.",
+        help="Java test file to lint (single-file mode).",
+    )
+    ap.add_argument(
+        "--batch",
+        default=None,
+        metavar="DIR_OR_GLOB",
+        help=(
+            "Batch mode: lint every *.java under DIR (recursively) or every "
+            "path matching the given glob. Produces ONE consolidated JSON report "
+            "with per-file 'violations'. Avoids re-spawning the linter per micro-edit."
+        ),
+    )
+    ap.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="In --batch mode, stop on the first file with violations.",
     )
     ap.add_argument(
         "--whitelist",
@@ -520,9 +559,8 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    test_file = Path(args.test_file)
-    if not test_file.exists():
-        print(f"[FAIL] Test file not found: {test_file}", file=sys.stderr)
+    if not args.test_file and not args.batch:
+        print("[FAIL] One of --test-file or --batch is required", file=sys.stderr)
         return 2
 
     try:
@@ -564,14 +602,46 @@ def main() -> int:
                     file=sys.stderr,
                 )
 
-    report = lint(
-        test_file,
-        wl,
-        contracts,
-        stack_profile=stack_profile,
-        index_dir=index_dir,
-        context_pack=context_pack,
-    )
+    def _lint_one(fp: Path) -> dict:
+        return lint(
+            fp,
+            wl,
+            contracts,
+            stack_profile=stack_profile,
+            index_dir=index_dir,
+            context_pack=context_pack,
+        )
+
+    if args.batch:
+        b = args.batch
+        bp = Path(b)
+        if bp.is_dir():
+            files = sorted(bp.rglob("*.java"))
+        else:
+            from glob import glob
+            files = [Path(p) for p in sorted(glob(b, recursive=True)) if p.endswith(".java")]
+        if not files:
+            print(f"[FAIL] --batch matched zero Java files: {b}", file=sys.stderr)
+            return 2
+        batch_report: dict = {"mode": "batch", "files": []}
+        total_violations = 0
+        for fp in files:
+            r = _lint_one(fp)
+            batch_report["files"].append(r)
+            total_violations += len(r.get("violations") or [])
+            if args.fail_fast and r.get("violations"):
+                batch_report["stoppedEarly"] = True
+                break
+        batch_report["totalFiles"] = len(batch_report["files"])
+        batch_report["totalViolations"] = total_violations
+        print(json.dumps(batch_report, indent=2, ensure_ascii=False))
+        return 1 if total_violations else 0
+
+    test_file = Path(args.test_file)
+    if not test_file.exists():
+        print(f"[FAIL] Test file not found: {test_file}", file=sys.stderr)
+        return 2
+    report = _lint_one(test_file)
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 1 if report["violations"] else 0
 

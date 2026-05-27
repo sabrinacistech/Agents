@@ -2,27 +2,63 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "dependency-graph.schema.json",
   "type": "object",
-  "required": ["schemaVersion", "graphs"],
+  "required": [
+    "schemaVersion",
+    "graphs"
+  ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": {
+      "const": 1
+    },
     "graphs": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["sut", "dependencies"],
+        "required": [
+          "sut",
+          "dependencies"
+        ],
         "properties": {
-          "sut": { "type": "string" },
-          "instantiationHint": { "type": "string" },
+          "sut": {
+            "type": "string"
+          },
+          "instantiationHint": {
+            "type": "string"
+          },
           "dependencies": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["name", "type", "injection"],
+              "required": [
+                "name",
+                "type",
+                "injection"
+              ],
               "properties": {
-                "name": { "type": "string" },
-                "type": { "type": "string" },
-                "injection": { "enum": ["constructor", "field", "setter"] },
-                "final": { "type": "boolean" }
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "injection": {
+                  "enum": [
+                    "constructor",
+                    "field",
+                    "setter"
+                  ]
+                },
+                "final": {
+                  "type": "boolean"
+                },
+                "mockable": {
+                  "type": "boolean",
+                  "description": "True if this type can be mocked with Mockito"
+                },
+                "evidenceId": {
+                  "type": "string",
+                  "description": "Evidence ID from the source constructor param"
+                }
               }
             }
           },
@@ -30,34 +66,83 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["field", "type", "methods"],
+              "required": [
+                "field",
+                "type",
+                "methods"
+              ],
               "properties": {
-                "field": { "type": "string" },
-                "type": { "type": "string" },
+                "field": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
                 "methods": {
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "required": ["evidenceId", "name", "params", "returnType"],
+                    "required": [
+                      "evidenceId",
+                      "name",
+                      "params",
+                      "returnType"
+                    ],
                     "properties": {
-                      "evidenceId": { "type": "string" },
-                      "name": { "type": "string" },
-                      "params": { "type": "array", "items": { "type": "string" } },
-                      "returnType": { "type": "string" },
-                      "throws": { "type": "array", "items": { "type": "string" } }
+                      "evidenceId": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "params": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "returnType": {
+                        "type": "string"
+                      },
+                      "throws": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
                     }
                   }
                 }
               }
             }
           },
-          "externalClients": { "type": "array" },
+          "externalClients": {
+            "type": "array"
+          },
           "springStrategy": {
             "type": "object",
             "properties": {
-              "slice": { "enum": ["WebMvcTest", "DataJpaTest", "none"] },
-              "mockBeans": { "type": "array", "items": { "type": "string" } }
+              "slice": {
+                "enum": [
+                  "WebMvcTest",
+                  "DataJpaTest",
+                  "none"
+                ]
+              },
+              "mockBeans": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Union of checked exceptions declared by SUT methods"
           }
         }
       }

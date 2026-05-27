@@ -21,8 +21,18 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "sut": {
-      "type": "string",
-      "description": "Fully-qualified class name of the system under test"
+      "description": "FQCN of the system under test. Accepts a string OR an object {fqcn: string} for back-compat with agents that emit a structured form.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "required": ["fqcn"],
+          "additionalProperties": true,
+          "properties": {
+            "fqcn": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
     },
     "mode": {
       "enum": ["coverage", "branch-coverage", "mutation-hardening"]
@@ -238,9 +248,9 @@
           "id":       { "type": "string" },
           "type":     { "type": "string" },
           "strategy": { "enum": ["builder", "constructor", "factory", "mock"] },
-          "builderEvidence":     { "type": "string" },
-          "constructorEvidence": { "type": "string" },
-          "factoryEvidence":     { "type": "string" },
+          "builderEvidence":     { "type": ["string", "null"] },
+          "constructorEvidence": { "type": ["string", "null"] },
+          "factoryEvidence":     { "type": ["string", "null"] },
           "values":   { "type": "object" },
           "variants": { "type": "array", "items": { "type": "string" } },
           "cycleSafe": { "type": "boolean" }
