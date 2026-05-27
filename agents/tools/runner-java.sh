@@ -78,13 +78,15 @@ log_success "Compilation OK"
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 2 — Run tests → JaCoCo XML
 # ─────────────────────────────────────────────────────────────────────────────
-log_section "Step 2 — Maven: test (JaCoCo via pom.xml)"
-log_info "Running tests — JaCoCo is already configured in the project's pom.xml."
+log_section "Step 2 — Maven: verify (tests + JaCoCo report via pom.xml)"
+log_info "Usando 'verify' para que JaCoCo ejecute su fase 'report' (bound a verify, no a test)."
 log_info "Expected output: target/site/jacoco/jacoco.xml"
 
+# mvn verify  = compile + test-compile + test + package + verify
+# -DskipITs   = omite integration tests, corre solo unit tests
 (
   cd "${TARGET_PATH}"
-  "${MVN_CMD}" test \
+  "${MVN_CMD}" verify -DskipITs \
     --batch-mode --no-transfer-progress \
     2>&1 | tee "${RUN_DIR}/mvn-test.log"
 )
@@ -104,25 +106,51 @@ fi
 log_section "Step 3 — Python pre-stage (bootstrap.py)"
 
 # ── Resolve Python interpreter ────────────────────────────────────────────────
+# Detection order (first match wins):
+#   1. venv inside agents/          (portable, created once per team)
+#   2. venv at repo root            (legacy location)
+#   3. py   — Python Launcher for Windows (py.exe, most reliable on Win)
+#   4. python                       (system Python, skips Win-Store stub)
+#   5. python3                      (Linux/Mac)
+# Windows Store stubs (python / python3 that open the Store) are detected by
+# running --version and checking for exit code 9009 or empty output.
+
+_python_works() {
+  # Returns 0 if the interpreter actually runs (not a Store stub).
+  local cmd="$1"
+  local out
+  out="$("${cmd}" --version 2>&1)" || return 1
+  [[ "${out}" == Python* ]] || return 1
+  return 0
+}
+
 PYTHON_CMD=""
 # 1. venv inside agents/
 if [[ -x "${AGENTS_DIR}/.venv/Scripts/python" ]]; then
-  PYTHON_CMD="${AGENTS_DIR}/.venv/Scripts/python"   # Windows Git Bash
+  PYTHON_CMD="${AGENTS_DIR}/.venv/Scripts/python"
 elif [[ -x "${AGENTS_DIR}/.venv/bin/python" ]]; then
-  PYTHON_CMD="${AGENTS_DIR}/.venv/bin/python"       # Linux/Mac
-# 2. venv at repo root (one level up from agents/)
+  PYTHON_CMD="${AGENTS_DIR}/.venv/bin/python"
+# 2. venv at repo root
 elif [[ -x "${AGENTS_DIR}/../.venv/Scripts/python" ]]; then
   PYTHON_CMD="$(cd "${AGENTS_DIR}/.." && pwd)/.venv/Scripts/python"
 elif [[ -x "${AGENTS_DIR}/../.venv/bin/python" ]]; then
   PYTHON_CMD="$(cd "${AGENTS_DIR}/.." && pwd)/.venv/bin/python"
-# 3. system python3 / python
-elif command -v python3 &>/dev/null; then
-  PYTHON_CMD="python3"
-elif command -v python &>/dev/null; then
+# 3. py launcher (Windows — most reliable, never a Store stub)
+elif command -v py &>/dev/null && _python_works py; then
+  PYTHON_CMD="py"
+# 4. python (system, works on Windows when Store alias is disabled)
+elif command -v python &>/dev/null && _python_works python; then
   PYTHON_CMD="python"
+# 5. python3 (Linux/Mac)
+elif command -v python3 &>/dev/null && _python_works python3; then
+  PYTHON_CMD="python3"
 else
-  log_error "No Python interpreter found."
-  log_error "Create a venv at agents/.venv or install python3 system-wide."
+  log_error "No Python interpreter found or all available ones are Windows Store stubs."
+  log_error "Soluciones:"
+  log_error "  1. Instalá Python desde https://python.org (marcá 'Add to PATH')"
+  log_error "  2. O deshabilitá los alias de la Store:"
+  log_error "     Configuración > Aplicaciones > Alias de ejecución de aplicaciones"
+  log_error "     → desactivá python.exe y python3.exe"
   exit 1
 fi
 log_info "Python: ${PYTHON_CMD} ($(${PYTHON_CMD} --version 2>&1))"
