@@ -76,28 +76,51 @@ fi
 log_success "Compilation OK"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 2 — Run tests → JaCoCo XML
+# STEP 2 — Bootstrap CLI JaCoCo  (skills/01-discovery/jacoco-bootstrap.md)
 # ─────────────────────────────────────────────────────────────────────────────
-log_section "Step 2 — Maven: verify (tests + JaCoCo report via pom.xml)"
-log_info "Usando 'verify' para que JaCoCo ejecute su fase 'report' (bound a verify, no a test)."
-log_info "Expected output: target/site/jacoco/jacoco.xml"
+log_section "Step 2 — Bootstrap CLI JaCoCo (sin modificar pom.xml)"
 
-# mvn verify  = compile + test-compile + test + package + verify
-# -DskipITs   = omite integration tests, corre solo unit tests
+# Arquitectura: jacoco-bootstrap.md — "Bootstrap CLI"
+#   Aplica cuando jacoco.configured = false en build-tool-contract.json.
+#
+#   REGLA CRÍTICA: destFile y dataFile DEBEN apuntar al MISMO archivo.
+#     -Djacoco.destFile  → le dice a prepare-agent DÓNDE escribir el .exec
+#     -Djacoco.dataFile  → le dice a jacoco:report DÓNDE leer el .exec
+#   Si solo se pasa destFile sin dataFile, report busca en el path default
+#   (target/jacoco.exec) y emite "missing execution data file".
+#
+#   outputDirectory=target/site/jacoco (path default que bootstrap.py auto-detecta)
+#
+#   Ref: skills/01-discovery/jacoco-bootstrap.md
+JACOCO_EXEC="target/jacoco-initial.exec"
+JACOCO_OUT_DIR="target/site/jacoco"
+
+log_info "Invocando: prepare-agent + test + jacoco:report"
+log_info "  destFile    = ${JACOCO_EXEC}"
+log_info "  dataFile    = ${JACOCO_EXEC}  (mismo que destFile — obligatorio)"
+log_info "  outputDir   = ${JACOCO_OUT_DIR}"
+
 (
   cd "${TARGET_PATH}"
-  "${MVN_CMD}" verify -DskipITs \
+  "${MVN_CMD}" \
+    -DfailIfNoTests=false \
+    "-Djacoco.destFile=${JACOCO_EXEC}" \
+    org.jacoco:jacoco-maven-plugin:prepare-agent \
+    test \
+    org.jacoco:jacoco-maven-plugin:report \
+    "-Djacoco.dataFile=${JACOCO_EXEC}" \
+    "-Djacoco.outputDirectory=${JACOCO_OUT_DIR}" \
     --batch-mode --no-transfer-progress \
     2>&1 | tee "${RUN_DIR}/mvn-test.log"
 )
 
 JACOCO_XML="${TARGET_PATH}/target/site/jacoco/jacoco.xml"
 if [[ -f "${JACOCO_XML}" ]]; then
-  log_success "JaCoCo XML generated: ${JACOCO_XML}"
+  log_success "JaCoCo XML generado: ${JACOCO_XML}"
   cp "${JACOCO_XML}" "${RUN_DIR}/jacoco.xml"
 else
-  log_warn "jacoco.xml not found at ${JACOCO_XML}"
-  log_warn "Tests may have no JaCoCo plugin configured. Continuing without XML."
+  log_warn "jacoco.xml no encontrado — build-tool-contract.json#jacoco.configured=false"
+  log_warn "El pipeline Python continuará sin datos de cobertura baseline (coverage-targets.json vacío)."
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -164,13 +187,21 @@ if [[ -f "${REQUIREMENTS}" ]]; then
 fi
 
 # ── Run bootstrap.py (auto-detects module, groupId, jacoco-xml) ───────────────
+# bootstrap.py auto-detecta target/site/jacoco/jacoco.xml si existe
+# (ver bootstrap.py::_detect_jacoco). No se necesita pasar --jacoco-xml
+# manualmente: bootstrap lo resuelve por sí solo del path default.
 log_info "Running: bootstrap.py --repo ${TARGET_PATH} --out ${STATE_DIR}"
+log_info "(bootstrap.py auto-detecta jacoco.xml desde target/site/jacoco/jacoco.xml)"
+
+BOOTSTRAP_ARGS=(
+  "${TOOLS_PYTHON}/bootstrap.py"
+  --repo "${TARGET_PATH}"
+  --out  "${STATE_DIR}"
+)
 
 (
   cd "${ARCH_DIR}"
-  "${PYTHON_CMD}" "${TOOLS_PYTHON}/bootstrap.py" \
-    --repo "${TARGET_PATH}" \
-    --out  "${STATE_DIR}" \
+  "${PYTHON_CMD}" "${BOOTSTRAP_ARGS[@]}" \
     2>&1 | tee "${RUN_DIR}/bootstrap.log"
 )
 BOOTSTRAP_EXIT=${PIPESTATUS[0]}
