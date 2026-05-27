@@ -42,9 +42,25 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from common import _TimedRun, SCHEMAS_DIR, emit_tool_summary  # noqa: F401
+
+# ---------------------------------------------------------------------------
+# Artefactos requeridos para que el pipeline determinista se considere "listo".
+# Usado por --watch. El nombre coincide con state/<n>.json o un directorio.
+# ---------------------------------------------------------------------------
+_WATCH_REQUIRED_FILES: tuple[str, ...] = (
+    "build-tool-contract.json",
+    "archetype-profile.json",
+    "generated-code-index.json",
+    "stack-profile.json",
+    "import-whitelist.json",
+)
+_WATCH_REQUIRED_DIRS: tuple[str, ...] = (
+    "symbol-contracts",
+)
 
 # ---------------------------------------------------------------------------
 # Schemas que NO se mapean a state/<name>.json sino que tienen lógica propia.
@@ -52,6 +68,18 @@ from common import _TimedRun, SCHEMAS_DIR, emit_tool_summary  # noqa: F401
 _SPECIAL_SCHEMAS: frozenset[str] = frozenset({
     "symbol-contract",  # → valida state/symbol-contracts/*.json
     "context-pack",     # → valida state/context-packs/*.json
+})
+
+# ---------------------------------------------------------------------------
+# state/_schemas/protocols/ contiene contratos de mensajes/JSON entre tools y
+# agentes (gate-failure, cycle-summary, pipeline-run, llm-budget, artifact-map,
+# context-pack-compact, patch-descriptor, telemetry). Esos schemas NO se
+# corresponden con state/<name>.json runtime: sus instancias viven en
+# state/_summaries/, state/context-packs-compact/, state/_patches/, o se emiten
+# inline. Por eso protocols/ se excluye del walk top-level.
+# ---------------------------------------------------------------------------
+_EXCLUDED_SCHEMA_SUBDIRS: frozenset[str] = frozenset({
+    "protocols",
 })
 
 # ---------------------------------------------------------------------------
@@ -330,6 +358,92 @@ def report_auxiliary_files(schemas_dir: Path, state_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# --watch mode
+# ---------------------------------------------------------------------------
+
+def _watch_required_present(state_dir: Path) -> tuple[bool, list[str]]:
+    """Return (all_present, list_of_missing_descriptions)."""
+    missing: list[str] = []
+    for fname in _WATCH_REQUIRED_FILES:
+        if not (state_dir / fname).exists():
+            missing.append(fname)
+    for dname in _WATCH_REQUIRED_DIRS:
+        d = state_dir / dname
+        if not d.exists() or not d.is_dir() or not any(d.glob("*.json")):
+            missing.append(f"{dname}/*.json")
+    return (not missing), missing
+
+
+def _watch_validate(state_dir: Path, jsonschema) -> bool:
+    """Run targeted validation over watched artefacts. True if all valid."""
+    ok = True
+    for fname in _WATCH_REQUIRED_FILES:
+        target = state_dir / fname
+        schema_name = fname.replace(".json", "")
+        schema_file = SCHEMAS_DIR / f"{schema_name}.schema.json"
+        if not schema_file.exists() or not target.exists():
+            ok = False
+            continue
+        try:
+            with schema_file.open("r", encoding="utf-8") as fh:
+                schema = json.load(fh)
+        except Exception:
+            ok = False
+            continue
+        status, _ = _validate_file(target, schema, jsonschema)
+        if status != "OK":
+            ok = False
+    # symbol-contracts directory
+    contracts_dir = state_dir / "symbol-contracts"
+    schema_file = SCHEMAS_DIR / "symbol-contract.schema.json"
+    if schema_file.exists() and contracts_dir.exists():
+        try:
+            with schema_file.open("r", encoding="utf-8") as fh:
+                schema = json.load(fh)
+            for cf in contracts_dir.glob("*.json"):
+                status, _ = _validate_file(cf, schema, jsonschema)
+                if status != "OK":
+                    ok = False
+                    break
+        except Exception:
+            ok = False
+    return ok
+
+
+def run_watch(state_dir: Path, timeout_seconds: int) -> int:
+    try:
+        import jsonschema  # type: ignore
+    except ImportError:
+        print(
+            "[FAIL] jsonschema not installed — run: pip install jsonschema",
+            file=sys.stderr,
+        )
+        return 3
+
+    deadline = time.monotonic() + max(1, timeout_seconds)
+    last_missing: list[str] = []
+    while time.monotonic() < deadline:
+        present, missing = _watch_required_present(state_dir)
+        if present and _watch_validate(state_dir, jsonschema):
+            print(
+                f"[OK] watch satisfied — required artefacts present and valid in {state_dir}"
+            )
+            return 0
+        if missing != last_missing:
+            print(
+                f"[WAIT] missing: {', '.join(missing) if missing else '(awaiting valid schema)'}"
+            )
+            last_missing = missing
+        time.sleep(0.2)
+    print(
+        f"[FAIL] --watch timeout after {timeout_seconds}s; missing: "
+        f"{', '.join(last_missing) if last_missing else '(validation never succeeded)'}",
+        file=sys.stderr,
+    )
+    return 1
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -351,6 +465,20 @@ def main() -> int:
         dest="state_dir",
         default=None,
         help="Alias for --state; takes priority over --state when both are given",
+    )
+    ap.add_argument(
+        "--watch",
+        action="store_true",
+        help=(
+            "Poll the state directory every 200 ms until the required pipeline "
+            "artefacts exist and validate, or --timeout-seconds elapses."
+        ),
+    )
+    ap.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=60,
+        help="Maximum seconds to wait when --watch is set (default: 60).",
     )
     args = ap.parse_args()
 
@@ -376,6 +504,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    # ── --watch mode: corto-circuita la validación estándar ──────────────────
+    if args.watch:
+        return run_watch(state_dir, args.timeout_seconds)
 
     # ── Dependencia jsonschema ────────────────────────────────────────────────
     try:

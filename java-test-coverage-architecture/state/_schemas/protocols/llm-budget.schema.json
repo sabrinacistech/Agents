@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "llm-budget.schema.json",
+  "title": "LLM budget — context pack size accounting",
+  "description": "Per-SUT accounting of the compact context pack handed to the LLM, including truncated fields when budget was clipped.",
+  "type": "object",
+  "required": ["schemaVersion", "sut", "contextPackBytes", "compactPackBytes", "estimatedTokensIn"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion":     { "const": 1 },
+    "sut":               { "type": "string", "minLength": 1 },
+    "contextPackBytes":  { "type": "integer", "minimum": 0 },
+    "compactPackBytes":  { "type": "integer", "minimum": 0 },
+    "estimatedTokensIn": { "type": "integer", "minimum": 0 },
+    "truncatedFields": {
+      "type": "array",
+      "description": "Field names that were dropped or shortened to fit the budget.",
+      "items": { "type": "string" }
+    },
+    "budgetCeiling": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Hard byte ceiling applied when generating the compact pack."
+    },
+    "ts": { "type": "string", "format": "date-time" }
+  }
+}
