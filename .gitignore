@@ -1,0 +1,15 @@
+# Ignorar carpetas específicas fuera del proyecto principal
+/carpetas_externas/
+/otra_carpeta_vieja/
+*.tmp
+
+# O si querés ignorar TODO lo que hay en la raíz excepto tu carpeta de agentes:
+# (Descomenta las líneas de abajo si este es tu caso real)
+ /*
+ !/java-test-coverage-architecture/
+ !/.gitignore
+.idea/.gitignore
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml
+Agents.iml
