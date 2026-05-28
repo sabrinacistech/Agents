@@ -52,9 +52,9 @@
     default (P1.a). Kept as a no-op for backwards compatibility.
 
 .PARAMETER NoCompactPacks
-    Disable the default compact-pack pass on step 16 (debug only). When set,
-    only the verbose state/context-packs/ files are written and no
-    llm-budget.json is produced.
+    DEPRECATED (audit 2026-05-28): compact packs are now mandatory. Flag is
+    accepted for backwards compatibility but only emits a warning; the
+    pipeline always writes state/context-packs-compact/ and llm-budget.json.
 
 .PARAMETER ContinueOnError
     Continue pipeline even if a step fails (legacy mode).
@@ -317,7 +317,7 @@ if ($ContinueOnError) {
 }
 
 if ($NoCompactPacks) {
-    $PipelineArgs += @("--no-compact-packs")
+    Write-Host "  [WARN] -NoCompactPacks is deprecated; compact packs are mandatory. Flag ignored." -ForegroundColor DarkYellow
 }
 
 if ($Compact) {

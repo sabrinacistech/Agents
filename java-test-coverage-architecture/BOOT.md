@@ -101,16 +101,33 @@ python tools/python/run_pipeline.py \
 
 ## Procedimiento
 
-Ejecutar las fases en orden estricto:
+Post-audit 2026-05-28: las fases 1-7 (discovery → planning) fueron
+**colapsadas en una única validación Python** (`validate_handoff.py`). El LLM
+ya no las ejecuta como turnos separados — solo lee el resumen que produce.
 
 ```text
-discovery → stack-profile → classification → symbol-contract
-        → dependency-graph → fixtures → planning
-        → generation (test-intent → test-body)
-        → validation → repair → reporting
+[DET] Phase 0:       run_pipeline.py  (16 steps, todo Python)
+[DET] Handoff gate:  validate_handoff.py  ← reemplaza las viejas fases LLM 1-7
+[LLM] Phase 8:       generation (test-intent → test-body)
+[DET] Phase 9:       validation (test_linter → narrow runner)
+[DET] Phase 10a:     repair determinista (repair_rules_compiler + ast_patcher)
+[LLM] Phase 10b:     repair-agent (solo si determinista escaló)
+[DET] Phase 11:      reporting (cycle_report_builder.py)
 ```
 
-Para CADA fase:
+**Comando obligatorio antes de Generation**:
+
+```bash
+python tools/python/validate_handoff.py --state state/
+```
+
+Si la salida es `BLOCKED_PRE_STAGE_MISSING`, abortar y reportar
+`state/_summaries/handoff-summary.json#missing`. Si es `READY`, el LLM
+consume **solamente** `state/_summaries/handoff-summary.json` +
+`state/context-packs-compact/<safe_fqcn>.json` por SUT. Está **prohibido**
+re-leer los nueve JSONs originales de las fases 1-7.
+
+Para CADA fase LLM (solo Generation y Repair):
 
 - Listar las precondiciones verificadas (referenciando schemas).
 - Mostrar los comandos exactos ejecutados y su salida resumida.
@@ -126,7 +143,7 @@ Para CADA fase:
 
 ### Salida final
 
-Reporte de `reporting-agent` con:
+Reporte generado **determinísticamente** por `tools/python/cycle_report_builder.py` (ex-`reporting-agent`, migrado a Python — no requiere turno LLM). El archivo queda en `state/_summaries/cycle-<N>-report.json` y contiene:
 
 - cobertura before/after por clase (derivada de XML),
 - lista de tests generados con sus `evidence-ids`,
@@ -134,6 +151,14 @@ Reporte de `reporting-agent` con:
 - fixes aplicados (`failure-memory`),
 - regresiones (si las hubo),
 - riesgos y siguientes pasos.
+
+```bash
+python tools/python/cycle_report_builder.py \
+  --sut-results state/sut-results.json \
+  --coverage-delta state/coverage-delta.json \
+  --cycle <N> --mode <coverage|branch-coverage|mutation-hardening> \
+  --out state/_summaries/cycle-<N>-report.json
+```
 
 ---
 

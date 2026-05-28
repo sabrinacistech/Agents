@@ -319,7 +319,7 @@ def fail(msg: str, code: int = 2) -> None:
 
 def find_pom_modules(repo: Path) -> list[Path]:
     """Best-effort list of Maven module directories (root + children with pom.xml)."""
-    poms = list(repo.rglob("pom.xml"))
+    poms = sorted(repo.rglob("pom.xml"))
     # Skip generated/build dirs
     poms = [p for p in poms if "target" not in p.parts and "build" not in p.parts]
     return [p.parent for p in poms]

@@ -43,8 +43,10 @@ El modo de cobertura viaja en el pack (`mode` / `m`); no lo redefines.
 
 ## Prohibiciones
 
-- No leer `.java`, `pom.xml`, `build.gradle` ni JaCoCo XML.
-- No inventar clases, métodos, campos ni imports fuera de `contextPack`.
+Aplican íntegramente las **[Prohibiciones absolutas canónicas](../MASTER_PROMPT.md#prohibiciones-canonicas)** del `MASTER_PROMPT.md`.
+
+Adicionalmente, específicas de este agente:
+
 - Sin evidencia de constructor/fixture para un parámetro → caso `BLOCKED`.
 
 ## Reglas mínimas

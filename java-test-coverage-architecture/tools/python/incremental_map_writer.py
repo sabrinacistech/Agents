@@ -177,12 +177,12 @@ def _find_affected_tests(
         mod_path = repo / module
         scan_roots = [mod_path / "src" / "test" / "java"]
     else:
-        scan_roots = list(repo.rglob("src/test/java"))[:20]  # cap for large mono-repos
+        scan_roots = sorted(repo.rglob("src/test/java"))[:20]  # cap for large mono-repos
 
     for root in scan_roots:
         if not root.exists():
             continue
-        for jf in root.rglob("*.java"):
+        for jf in sorted(root.rglob("*.java")):
             rel = str(jf.relative_to(repo))
             imports = _imports_of_java_file(repo, rel)
             # Check if any import matches an affected FQCN

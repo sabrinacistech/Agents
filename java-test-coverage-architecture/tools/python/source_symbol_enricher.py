@@ -57,12 +57,15 @@ def iter_java_files(module: Path):
 
 
 def index_sources(repo: Path, module: str | None) -> dict[str, dict]:
-    modules = [repo / module] if module else [p for p in repo.iterdir() if p.is_dir()] + [repo]
+    if module:
+        modules = [repo / module]
+    else:
+        modules = sorted((p for p in repo.iterdir() if p.is_dir()), key=lambda p: p.name) + [repo]
     out: dict[str, dict] = {}
     for mod in modules:
         if not mod.exists():
             continue
-        for jf in iter_java_files(mod):
+        for jf in sorted(iter_java_files(mod)):
             txt = jf.read_text(encoding="utf-8", errors="ignore")
             pkg_m = PACKAGE_RE.search(txt)
             pkg = pkg_m.group(1) if pkg_m else ""

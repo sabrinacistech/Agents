@@ -151,6 +151,7 @@ def plan(
     batch_size: int = 10,
     mode: str = "coverage",
     sut_filter: list[str] | None = None,
+    incremental_only: bool = False,
 ) -> dict:
     """Compute and return the batch-plan dict.
 
@@ -178,6 +179,17 @@ def plan(
         before = len(targets)
         targets = [t for t in targets if t.get("sut") in allow]
         print(f"[INFO] --sut filter active: {len(targets)}/{before} targets retained for {sorted(allow)}")
+    # Post-audit 2026-05-28: when --since was passed and --incremental-only is
+    # set, narrow the batch to SUTs flagged as affected by the git diff. The
+    # boost-only policy was leaking unaffected SUTs into the LLM context.
+    if incremental_only and incremental:
+        before = len(targets)
+        targets = [t for t in targets if t.get("sut") in incremental]
+        print(
+            f"[INFO] --incremental-only filter active: "
+            f"{len(targets)}/{before} targets retained "
+            f"({len(incremental)} affected SUTs from incremental-map.json)"
+        )
     if not targets:
         print("[INFO] no coverage targets; batch-plan will be empty")
 
@@ -329,6 +341,16 @@ def main() -> int:
             "dropped before scoring."
         ),
     )
+    ap.add_argument(
+        "--incremental-only",
+        action="store_true",
+        help=(
+            "Post-audit 2026-05-28: when state/incremental-map.json is "
+            "non-empty, restrict the batch-plan to SUTs in affectedClasses "
+            "(instead of merely boosting them). Use this when run_pipeline "
+            "was invoked with --since to keep the LLM context narrow."
+        ),
+    )
     args = ap.parse_args()
 
     state_dir = Path(args.out).resolve()
@@ -340,6 +362,7 @@ def main() -> int:
         batch_size=args.batch_size,
         mode=args.mode,
         sut_filter=args.sut,
+        incremental_only=args.incremental_only,
     )
     validate("batch-plan", result)
     atomic_write_json(state_dir / "batch-plan.json", result)

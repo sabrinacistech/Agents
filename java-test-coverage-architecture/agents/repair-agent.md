@@ -57,13 +57,11 @@ descriptor JSON con los métodos corregidos, o `BLOCKED` con razón.
 
 ## Prohibiciones absolutas
 
-- **NUNCA** leas archivos `.java`, `pom.xml`, `build.gradle`, classpath ni JaCoCo XML.
-- **NUNCA** inventes símbolos, métodos o tipos que no existan en `contextPack`.
-- **NUNCA** devuelvas código Java completo ni archivos fuente — solo el patch descriptor JSON con los métodos corregidos.
-- **NUNCA** uses un import que no esté en `contextPack.allowedImports`.
+Aplican íntegramente las **[Prohibiciones absolutas canónicas](../MASTER_PROMPT.md#prohibiciones-canonicas)** del `MASTER_PROMPT.md`.
+
+Adicionalmente, específicas de la reparación:
+
 - **NUNCA** propongas correcciones usando símbolos que no aparezcan en `contextPack.methods` o `contextPack.constructors`.
-- **NUNCA** repares el mismo error de la misma forma si `failureMemory` indica que ya falló antes.
-- **NUNCA** insertes sentencias `import`, cláusulas `package` o declaraciones de clase (`public class...`, `class`, `interface`, `enum`) dentro del texto de `methods[].body`.
 - **NUNCA** declares en `fields[]` tipos que no estén validados en `contextPack.dependencies`, `contextPack.sut` o el catálogo de fixtures entregado.
 
 ---
@@ -213,8 +211,14 @@ Para cada compileError:
 
 ### Reglas anti-loop (failureMemory)
 
-- Si el mismo `errorCode` + estrategia ya tuvo `outcome: FAILED` en ≥ 2 ciclos previos → BLOCKED.
-- Si el total de intentos para este `testCaseId` supera 3 → BLOCKED.
+> **Nota (post-audit 2026-05-28)**: estas reglas las **aplica el driver
+> Python** (`gate_runner.py` → gate `G7`, thresholds en `_G7_MAX_FAILED_ATTEMPTS`
+> y `_G7_MAX_TESTCASE_ATTEMPTS`). Si llegás a este prompt es porque G7 ya
+> dio PASS — no necesitás re-contar intentos. Las viñetas siguientes son
+> informativas para que entiendas el contexto, no instrucciones de conteo.
+
+- El driver bloquea cuando el mismo `(errorCode, symbolFQN, fixId)` ya tuvo `outcome: FAILED` en ≥ 2 ciclos previos.
+- El driver bloquea cuando el total de intentos para este `testCaseId` supera 3.
 
 ---
 

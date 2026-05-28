@@ -29,7 +29,13 @@ TQG_12_TAUTOLOGY                              => escalateToLLM(11-quality/12 —
 # Assert-free test: re-plan from intent — body lacks observable check.
 TQG_12_ASSERT_FREE                            => escalateToLLM(11-quality/12 — add assert*/verify on the return value or a collaborator interaction listed in testCase.mockSetup)
 
-# Over-mock: mocking the SUT or a value object (String/Optional/BigDecimal/...).
+# Over-mock: mocking the SUT itself can be auto-repaired by flipping the
+# @Mock annotation to @InjectMocks for the field whose declared type is the
+# SUT. The linter populates `meta.sutSimpleName` for this kind so the rule
+# can resolve the target deterministically (post-audit 2026-05-28).
+# When the over-mock targets a value object (String/Optional/BigDecimal/…)
+# the right answer needs semantic context; keep that case for the LLM.
+TQG_12_OVER_MOCK.sut                          => convertMockSutToInjectMocks(${meta.sutSimpleName})
 TQG_12_OVER_MOCK                              => escalateToLLM(11-quality/12 — instantiate the SUT with @InjectMocks/constructor; use a real value for value objects)
 
 # Brittle over-verification.
@@ -44,8 +50,10 @@ TQG_10_TEST_ORDER_DEP                         => escalateToLLM(11-quality/10 —
 # Naming violation: needs semantic understanding of the scenario.
 TQG_03_NAMING                                 => escalateToLLM(11-quality/03 — rename to should<Behavior>_when<Condition> using testCase.scenario as source of truth)
 
-# Missing AAA separators.
-TQG_02_NO_AAA                                 => escalateToLLM(11-quality/02 — insert `// given`, `// when`, `// then` comments delineating the three sections)
+# Missing AAA separators — fully deterministic: ast_patcher inserts the
+# `// given` / `// when` / `// then` markers based on a heuristic split of
+# the method body (post-audit 2026-05-28). No semantic guessing required.
+TQG_02_NO_AAA                                 => insertAaaComments()
 
 # Logic in test (if/for/while/switch).
 TQG_09_LOGIC_IN_TEST                          => escalateToLLM(11-quality/09 — replace control flow with @ParameterizedTest or split into separate test cases per branch)
@@ -53,8 +61,11 @@ TQG_09_LOGIC_IN_TEST                          => escalateToLLM(11-quality/09 —
 # Eager test: multiple `// when` blocks.
 TQG_11_EAGER_TEST                             => escalateToLLM(11-quality/11 — split into multiple test methods, one concept each)
 
-# Unused stub.
-TQG_06_UNUSED_STUB                            => escalateToLLM(11-quality/06 — remove the stub or invoke the method on the SUT path that uses it)
+# Unused stub — deterministic: drop the `when(...).thenReturn(...)` (and
+# `doX().when()` / `given().willReturn()` equivalents) for the offending
+# method. The linter exposes the method name in `meta.method`
+# (post-audit 2026-05-28). If removal would empty the @BeforeEach, escalate.
+TQG_06_UNUSED_STUB                            => removeUnusedStub(${meta.method})
 
 # Swallowed exception in try/catch.
 TQG_12_SWALLOWED                              => escalateToLLM(11-quality/12 — replace try/catch with assertThrows or add fail()/assert on caught exception)

@@ -3,6 +3,20 @@
 This is intentionally small. It only performs safe edits that do not require
 semantic guessing. Unsupported actions fail closed and must be handled by the
 Repair Agent fallback policy.
+
+Actions:
+  - addImport <fqcn>          — insert ``import <fqcn>;`` if whitelisted.
+  - removeImport <fqcn>       — drop the matching ``import`` line.
+  - insertAaaComments         — insert ``// given`` / ``// when`` / ``// then``
+                                separators inside each ``@Test`` method body
+                                that lacks them (G6 quality / TQG_02_NO_AAA).
+  - removeUnusedStub <method> — drop stub lines that reference the named
+                                mock method but are never invoked
+                                (TQG_06_UNUSED_STUB).
+  - convertMockSutToInjectMocks <fqcn>
+                              — change ``@Mock`` to ``@InjectMocks`` for a
+                                field whose declared type is exactly the SUT
+                                (TQG_12_OVER_MOCK / E_MOCK_SUT).
 """
 from __future__ import annotations
 
@@ -16,6 +30,18 @@ from common import load_json
 
 IMPORT_RE = re.compile(r"^\s*import\s+(?:static\s+)?([\w\.]+(?:\.\*)?)\s*;\n?", re.MULTILINE)
 PACKAGE_RE = re.compile(r"^\s*package\s+[\w\.]+\s*;\s*\n", re.MULTILINE)
+
+# Match `@Test ... <returnType> <methodName>(<params>) { <body> }` conservatively.
+# We capture the body and reinject AAA separators when none of // given,
+# // when, // then are present.
+_TEST_METHOD_RE = re.compile(
+    r"(@Test[^\n]*\n(?:\s*@[^\n]*\n)*\s*(?:public\s+|protected\s+|private\s+)?"
+    r"(?:static\s+)?\w[\w<>,\[\] ]*\s+(\w+)\s*\([^)]*\)\s*"
+    r"(?:throws\s+[\w, ]+)?\s*\{)([\s\S]*?)(\n[ \t]*\})",
+    re.MULTILINE,
+)
+
+_AAA_PRESENT = re.compile(r"//\s*(given|when|then)\b", re.IGNORECASE)
 
 
 def is_import_allowed(fqcn: str, whitelist: dict) -> bool:
@@ -49,27 +75,180 @@ def remove_import(text: str, imp: str) -> str:
     return re.sub(rf"^\s*import\s+(?:static\s+)?{escaped}\s*;\s*\n", "", text, flags=re.MULTILINE)
 
 
+# ── New deterministic actions ────────────────────────────────────────────────
+
+def insert_aaa_comments(text: str) -> tuple[str, int]:
+    """Insert `// given` / `// when` / `// then` separators into @Test method
+    bodies that lack them. Heuristic split:
+
+      - `// given`  → first non-blank line of the body;
+      - `// when`   → the line that calls a SUT method (best effort: the
+                       first statement after the first blank-line gap, or
+                       the line that contains ``=`` with a call);
+      - `// then`   → the line that begins with ``assert`` / ``verify`` /
+                       ``Assertions.``.
+
+    Falls back to prepending only ``// given`` when the heuristic can't
+    classify the structure (still a strict improvement: TQG_02 only requires
+    the separators to exist as a hint, not a perfect split).
+    """
+    changed = 0
+
+    def _rewrite(match: re.Match[str]) -> str:
+        nonlocal changed
+        head, _name, body, tail = match.group(1), match.group(2), match.group(3), match.group(4)
+        if _AAA_PRESENT.search(body):
+            return match.group(0)
+        # Compute indentation from the first non-empty line.
+        lines = body.split("\n")
+        first_non_empty = next((ln for ln in lines if ln.strip()), "")
+        indent_match = re.match(r"^[ \t]*", first_non_empty)
+        indent = indent_match.group(0) if indent_match else "        "
+
+        # Locate index of first assert/verify line for the // then marker.
+        then_idx: int | None = None
+        for i, ln in enumerate(lines):
+            stripped = ln.lstrip()
+            if stripped.startswith(("assert", "verify", "Assertions.", "assertThat", "assertThrows")):
+                then_idx = i
+                break
+
+        # Locate index of likely // when line (first statement with `=` and
+        # `(`, or first line after a blank gap, that isn't an assert).
+        when_idx: int | None = None
+        for i, ln in enumerate(lines):
+            stripped = ln.lstrip()
+            if then_idx is not None and i >= then_idx:
+                break
+            if "=" in stripped and "(" in stripped and not stripped.startswith(("assert", "verify")):
+                when_idx = i
+                break
+        if when_idx is None and then_idx is not None and then_idx > 0:
+            # First non-blank line before the assert that isn't a setup stub.
+            for i in range(then_idx - 1, -1, -1):
+                stripped = lines[i].lstrip()
+                if stripped and not stripped.startswith(("when(", "doReturn", "doThrow", "given(", "//")):
+                    when_idx = i
+                    break
+
+        # Build new body lines with markers inserted.
+        out: list[str] = []
+        first_non_empty_seen = False
+        for i, ln in enumerate(lines):
+            if not first_non_empty_seen and ln.strip():
+                out.append(f"{indent}// given")
+                first_non_empty_seen = True
+            if when_idx is not None and i == when_idx:
+                out.append(f"{indent}// when")
+            if then_idx is not None and i == then_idx:
+                out.append(f"{indent}// then")
+            out.append(ln)
+        if not first_non_empty_seen:
+            return match.group(0)  # empty body — leave alone
+
+        changed += 1
+        return head + "\n".join(out) + tail
+
+    new_text = _TEST_METHOD_RE.sub(_rewrite, text)
+    return new_text, changed
+
+
+def remove_unused_stub(text: str, method: str) -> tuple[str, int]:
+    """Drop ``when(<x>.<method>(...)).thenReturn|thenThrow|thenAnswer(...)``
+    and the equivalent ``doReturn(...).when(<x>).<method>(...)`` lines.
+
+    The ``method`` argument is the bare method name; the receiver and args
+    are wildcarded. Removed lines are reported via the int return value.
+    """
+    if not method or not re.match(r"^\w+$", method):
+        return text, 0
+    me = re.escape(method)
+    patterns = [
+        rf"^\s*when\([^;]*\.{me}\s*\([^;]*\)\s*\)\s*\.(?:thenReturn|thenThrow|thenAnswer)\([^;]*\)\s*;\s*\n",
+        rf"^\s*do(?:Return|Throw|Answer|Nothing)\([^;]*\)\s*\.when\([^;]*\)\s*\.{me}\s*\([^;]*\)\s*;\s*\n",
+        rf"^\s*given\([^;]*\.{me}\s*\([^;]*\)\s*\)\s*\.willReturn\([^;]*\)\s*;\s*\n",
+    ]
+    removed = 0
+    new_text = text
+    for pat in patterns:
+        compiled = re.compile(pat, re.MULTILINE | re.DOTALL)
+        new_text, n = compiled.subn("", new_text)
+        removed += n
+    return new_text, removed
+
+
+def convert_mock_sut_to_inject_mocks(text: str, sut_simple_name: str) -> tuple[str, int]:
+    """Replace ``@Mock`` with ``@InjectMocks`` for a field whose declared type
+    is exactly ``sut_simple_name``. Idempotent — already-converted fields are
+    left alone.
+    """
+    if not sut_simple_name or not re.match(r"^\w+$", sut_simple_name):
+        return text, 0
+    se = re.escape(sut_simple_name)
+    # Match: optional whitespace + @Mock + same-line or next-line field decl
+    # of type `<sut>` (with optional spy/lenient annotations between).
+    pat = re.compile(
+        rf"(^\s*)@Mock(\b[^\n]*)\n(\s*(?:@[\w.]+\s*\n\s*)*)((?:private|protected|public)?\s*"
+        rf"(?:final\s+)?{se}\b)",
+        re.MULTILINE,
+    )
+    new_text, n = pat.subn(lambda m: f"{m.group(1)}@InjectMocks{m.group(2)}\n{m.group(3)}{m.group(4)}", text)
+    return new_text, n
+
+
+# ── CLI ──────────────────────────────────────────────────────────────────────
+
+_ACTIONS_WITHOUT_ARG = frozenset({"insertAaaComments"})
+_ACTIONS_WITH_ARG = frozenset({
+    "addImport", "removeImport", "removeUnusedStub", "convertMockSutToInjectMocks",
+})
+_ALL_ACTIONS = sorted(_ACTIONS_WITHOUT_ARG | _ACTIONS_WITH_ARG)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", required=True)
-    ap.add_argument("--action", required=True, choices=["addImport", "removeImport"])
-    ap.add_argument("--arg", required=True)
-    ap.add_argument("--whitelist", required=True)
+    ap.add_argument("--action", required=True, choices=_ALL_ACTIONS)
+    ap.add_argument("--arg", default=None,
+                    help="Required for addImport/removeImport/removeUnusedStub/convertMockSutToInjectMocks")
+    ap.add_argument("--whitelist", default=None,
+                    help="Path to import-whitelist.json (required for addImport)")
     args = ap.parse_args()
 
+    if args.action in _ACTIONS_WITH_ARG and not args.arg:
+        ap.error(f"--arg is required for action={args.action}")
+
     path = Path(args.file)
-    whitelist = load_json(Path(args.whitelist))
     text = path.read_text(encoding="utf-8", errors="ignore")
+
     if args.action == "addImport":
+        if not args.whitelist:
+            ap.error("--whitelist is required for action=addImport")
+        whitelist = load_json(Path(args.whitelist))
         new_text, err = add_import(text, args.arg, whitelist)
         if err:
             print(json.dumps({"status": "BLOCKED", "reason": err}, indent=2))
             return 1
-    else:
+        report: dict = {"status": "OK", "changed": new_text != text}
+    elif args.action == "removeImport":
         new_text = remove_import(text, args.arg)
+        report = {"status": "OK", "changed": new_text != text}
+    elif args.action == "insertAaaComments":
+        new_text, n = insert_aaa_comments(text)
+        report = {"status": "OK", "changed": new_text != text, "methodsPatched": n}
+    elif args.action == "removeUnusedStub":
+        new_text, n = remove_unused_stub(text, args.arg)
+        report = {"status": "OK", "changed": new_text != text, "stubsRemoved": n}
+    elif args.action == "convertMockSutToInjectMocks":
+        new_text, n = convert_mock_sut_to_inject_mocks(text, args.arg)
+        report = {"status": "OK", "changed": new_text != text, "fieldsConverted": n}
+    else:  # pragma: no cover — argparse choices guard this
+        ap.error(f"unknown action: {args.action}")
+        return 2
+
     if new_text != text:
         path.write_text(new_text, encoding="utf-8")
-    print(json.dumps({"status": "OK", "changed": new_text != text}, indent=2))
+    print(json.dumps(report, indent=2))
     return 0
 
 

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-28T19:33:27Z",
+  "phase": "PRE_GENERATION",
+  "status": "BLOCKED_PRE_STAGE_MISSING",
+  "missing": [
+    "dir: context-packs-compact/ (not created)"
+  ]
+}

@@ -13,8 +13,8 @@ Runs (in order):
   10. classification_analyzer   → state/classification-index.json
   11. dependency_graph_extractor→ state/dependency-graph.json
   12. fixture_catalog_builder   → state/fixture-catalog.json
-  13. coverage_planner          → state/batch-plan.json
-  14. incremental_map_writer    → state/incremental-map.json           (if --since)
+  13. incremental_map_writer    → state/incremental-map.json           (if --since)
+  14. coverage_planner          → state/batch-plan.json (narrowed by --incremental-only when --since was given)
   15. state_validator           → validates all state/*.json
   16. context_pack_builder      → state/context-packs/<safe_fqcn>.json (one per SUT in batch)
 
@@ -68,8 +68,11 @@ from common import _TimedRun, emit_tool_summary  # noqa: E402
 
 # ── P4.1: conservative input-hash cache ───────────────────────────────────────
 # Only these steps are cacheable. Anything else always runs.
+# "index" added post-audit 2026-05-28: semantic_index_writer also has its own
+# fingerprint short-circuit, but caching at the orchestrator level avoids the
+# Python subprocess spawn entirely when symbol-contracts/ is unchanged.
 _CACHEABLE_STEPS: frozenset[str] = frozenset({
-    "stack", "classification", "planning", "context",
+    "stack", "classification", "index", "planning", "context",
 })
 
 
@@ -119,6 +122,31 @@ def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
                 parts.append(f"{p.name}:{_sha256_file(p)}")
             except OSError:
                 return None
+        return parts
+    if step == "index":
+        # Step 9 consumes state/symbol-contracts/*.json (+ a few index inputs
+        # for whitelist/dep-graph/annotations). Hash all contracts; if --full
+        # was forced, skip the cache entirely so the rebuild is unconditional.
+        if getattr(args, "full_index", False):
+            return None
+        contracts_dir = out_dir / "symbol-contracts"
+        if not contracts_dir.exists():
+            return None
+        for p in sorted(contracts_dir.glob("*.json")):
+            try:
+                parts.append(f"{p.name}:{_sha256_file(p)}")
+            except OSError:
+                return None
+        # Include the other inputs read by the writer (whitelist, dep-graph
+        # source files, annotations source files) so a stack-only change
+        # invalidates the index too.
+        for name in ("import-whitelist.json", "dependency-graph.json"):
+            p = out_dir / name
+            if p.exists():
+                try:
+                    parts.append(f"{name}:{_sha256_file(p)}")
+                except OSError:
+                    return None
         return parts
     if step == "planning":
         parts.append(f"mode={args.coverage_mode}")
@@ -309,12 +337,7 @@ def main() -> int:
     ap.add_argument(
         "--no-compact-packs",
         action="store_true",
-        help=(
-            "Disable the default --compact pass on context_pack_builder.py "
-            "(Step 16). With compact packs enabled (default), the LLM-facing "
-            "minified pack is written under state/context-packs-compact/ and "
-            "state/_summaries/llm-budget.json is populated for every SUT."
-        ),
+        help=argparse.SUPPRESS,  # DEPRECATED — ignored (compact packs are mandatory).
     )
     ap.add_argument(
         "--sut",
@@ -425,6 +448,15 @@ def main() -> int:
             # only emits the contracts the user actually wants.
             bc_args += ["--fqcn", args.sut]
         step("bytecode", bc_args)
+        # Early validation (post-audit 2026-05-28): validate the contracts as
+        # soon as the scanner produced them. Failing here saves 8+ downstream
+        # steps when the bytecode/javap output drifts from the schema.
+        if "validate" not in skip:
+            step("validate-contracts", [
+                HERE / "state_validator.py",
+                "--state", args.out,
+                "--scope", "contracts",
+            ])
 
     # ── Step 7: Source symbol enricher ───────────────────────────────────────
     if "source" not in skip:
@@ -451,6 +483,14 @@ def main() -> int:
         if args.full_index:
             idx_args.append("--full")
         step("index", idx_args)
+        # Early validation: catch broken state/index/ before classification/
+        # planning consume it.
+        if "validate" not in skip:
+            step("validate-index", [
+                HERE / "state_validator.py",
+                "--state", args.out,
+                "--scope", "index",
+            ])
 
     # ── Step 10: Classification analyzer → classification-index.json ──────────
     if "classification" not in skip:
@@ -464,21 +504,9 @@ def main() -> int:
     if "fixtures" not in skip:
         step("fixtures", [HERE / "fixture_catalog_builder.py", "--out", args.out])
 
-    # ── Step 13 [Phase 2]: Coverage planner → batch-plan.json ────────────────
-    if "planning" not in skip:
-        plan_args = [
-            HERE / "coverage_planner.py",
-            "--out", args.out,
-            "--mode", args.coverage_mode,
-        ]
-        if args.sut:
-            # P3.a: planning honours --sut end to end (no more "context only"
-            # caveat). The batch-plan.json now contains targets for this FQCN
-            # only.
-            plan_args += ["--sut", args.sut]
-        step("planning", plan_args)
-
-    # ── Step 14 [Phase 3]: Incremental map writer ─────────────────────────────
+    # ── Step 13 [Phase 3]: Incremental map writer ────────────────────────────
+    # Post-audit 2026-05-28: moved BEFORE planning so the planner can both
+    # boost AND optionally filter to affectedClasses in a single pass.
     if "incremental" not in skip and args.since:
         inc_args = [
             HERE / "incremental_map_writer.py",
@@ -490,21 +518,53 @@ def main() -> int:
             inc_args += ["--module", args.module]
         step("incremental", inc_args)
 
+    # ── Step 14 [Phase 2]: Coverage planner → batch-plan.json ────────────────
+    if "planning" not in skip:
+        plan_args = [
+            HERE / "coverage_planner.py",
+            "--out", args.out,
+            "--mode", args.coverage_mode,
+        ]
+        if args.sut:
+            # P3.a: planning honours --sut end to end (no more "context only"
+            # caveat). The batch-plan.json now contains targets for this FQCN
+            # only.
+            plan_args += ["--sut", args.sut]
+        # When --since drove an incremental scan, narrow the batch to the
+        # affected SUTs so the LLM context stays scoped to what actually
+        # changed (post-audit 2026-05-28).
+        if args.since:
+            plan_args.append("--incremental-only")
+        step("planning", plan_args)
+
     # ── Step 15: State validator ──────────────────────────────────────────────
     if "validate" not in skip:
         step("validate", [HERE / "state_validator.py", "--state", args.out])
 
     # ── Step 16: Context pack builder → state/context-packs/<safe_fqcn>.json ─
-    # P1.a: --compact is the default. The LLM-facing pack is the minified one
-    # under state/context-packs-compact/. The verbose pack is still written for
-    # human inspection; opt out with --no-compact-packs when debugging.
+    # P1.a (post-audit 2026-05-28): --compact is now mandatory. The LLM-facing
+    # pack is the minified one under state/context-packs-compact/; the verbose
+    # pack under state/context-packs/ is kept only for human inspection.
+    # --no-compact-packs survives as a deprecated no-op for backwards compat.
+    if args.no_compact_packs:
+        print(
+            "[WARN] --no-compact-packs is deprecated and ignored. "
+            "Compact context-packs are now always produced (audit 2026-05-28).",
+            file=sys.stderr,
+        )
     if "context" not in skip:
-        ctx_args = [HERE / "context_pack_builder.py", "--out", args.out]
-        if not args.no_compact_packs:
-            ctx_args.append("--compact")
+        ctx_args = [HERE / "context_pack_builder.py", "--out", args.out, "--compact"]
         if args.sut:
             ctx_args += ["--sut", args.sut]
         step("context", ctx_args)
+
+    # ── Handoff gate (post-audit 2026-05-28) ─────────────────────────────────
+    # Emits state/_summaries/handoff-summary.json so the LLM can skip the
+    # old "phases 1-7 read JSON" ceremony and start directly at Generation.
+    # Failure here means BLOCKED_PRE_STAGE_MISSING — surfaced via the same
+    # last-failure.json plumbing as any other step.
+    if "context" not in skip:
+        step("handoff", [HERE / "validate_handoff.py", "--state", args.out])
 
     print("\nDone." if rc == 0 else "\nDone with errors.")
     return rc

@@ -47,15 +47,14 @@ framework `unknown` o target sin método.
 
 ## Prohibiciones (condensadas)
 
-- No leer `.java`, `pom.xml`, `build.gradle`, JaCoCo XML, classpath ni bytecode.
-- No inventar clases, métodos, campos, imports, constructores ni fixtures.
+Aplican íntegramente las **[Prohibiciones absolutas canónicas](../MASTER_PROMPT.md#prohibiciones-canonicas)** del `MASTER_PROMPT.md`.
+
+Adicionalmente, específicas de este agente (constraints estructurales del patch):
+
 - `allowedImports[]` ⊆ `contextPack.allowedImports` (o `imp` en compact pack).
 - Tipos de `fields[]` ⊆ `dependencies[].type` ∪ `{sut}` ∪ fixtures.
-- Constructores: sólo firmas en `constructors` (`ctor`). Targets del SUT:
-  sólo `coverage.targets[].method` (`cov`). Mock setup: sólo métodos en
-  `collaboratorUsage`. Respetar `dependencies[].instantiationStrategy`
-  (no instanciar interfaces). No mezclar APIs entre frameworks; usar el
-  declarado en `stack`/`stk`.
+- Constructores: sólo firmas en `constructors` (`ctor`). Targets del SUT: sólo `coverage.targets[].method` (`cov`).
+- Mock setup: sólo métodos en `collaboratorUsage`. Respetar `dependencies[].instantiationStrategy` (no instanciar interfaces).
 
 ## Reglas mínimas del body
 

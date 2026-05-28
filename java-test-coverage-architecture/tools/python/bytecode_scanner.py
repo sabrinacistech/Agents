@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -238,37 +240,60 @@ def main() -> int:
     out_dir = state_dir / "symbol-contracts"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Collect class file candidates in deterministic order (post-audit
+    # 2026-05-28). Filtering happens before the parallel scan to avoid spawning
+    # javap on synthetic/nested classes.
+    candidates: list[Path] = []
+    for classes_dir in classes_dirs:
+        for cf in sorted(classes_dir.rglob("*.class")):
+            if "$" in cf.name:
+                continue
+            candidates.append(cf)
+
+    # Parallel javap invocations — each is an independent subprocess; cap the
+    # pool at min(cpu_count, 8) to avoid oversubscribing the JVM launcher.
+    # Order is preserved by ThreadPoolExecutor.map, so dedup-by-first stays
+    # deterministic.
+    worker_count = min(max(1, os.cpu_count() or 1), 8)
+
+    def _scan_pair(cf: Path) -> tuple[Path, dict | None]:
+        return (cf, scan_class(cf, javap))
+
+    scanned: list[tuple[Path, dict | None]]
+    if not candidates:
+        scanned = []
+    elif worker_count == 1 or len(candidates) <= 2:
+        scanned = [_scan_pair(cf) for cf in candidates]
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            scanned = list(pool.map(_scan_pair, candidates))
+
     n = 0
     written: list[dict] = []
     seen_fqcns: set[str] = set()
-    for classes_dir in classes_dirs:
-        for cf in classes_dir.rglob("*.class"):
-            # Skip nested/synthetic
-            if "$" in cf.name:
-                continue
-            contract = scan_class(cf, javap)
-            if not contract:
-                continue
-            if not include.search(contract["fqcn"]):
-                continue
-            if fqcn_whitelist is not None and contract["fqcn"] not in fqcn_whitelist:
-                continue
-            if contract["fqcn"] in seen_fqcns:
-                # Same class compiled into multiple modules — keep the first.
-                continue
-            seen_fqcns.add(contract["fqcn"])
-            try:
-                validate("symbol-contract", contract)
-            except Exception as e:
-                print(f"[WARN] schema failed for {contract['fqcn']}: {e}", file=sys.stderr)
-            atomic_write_json(out_dir / f"{contract['fqcn']}.json", contract)
-            written.append({
-                "fqcn": contract["fqcn"],
-                "kind": contract.get("kind", "class"),
-                "file": f"{contract['fqcn']}.json",
-                "instantiation": contract.get("instantiation", {}).get("strategy", "unknown"),
-            })
-            n += 1
+    for cf, contract in scanned:
+        if not contract:
+            continue
+        if not include.search(contract["fqcn"]):
+            continue
+        if fqcn_whitelist is not None and contract["fqcn"] not in fqcn_whitelist:
+            continue
+        if contract["fqcn"] in seen_fqcns:
+            # Same class compiled into multiple modules — keep the first.
+            continue
+        seen_fqcns.add(contract["fqcn"])
+        try:
+            validate("symbol-contract", contract)
+        except Exception as e:
+            print(f"[WARN] schema failed for {contract['fqcn']}: {e}", file=sys.stderr)
+        atomic_write_json(out_dir / f"{contract['fqcn']}.json", contract)
+        written.append({
+            "fqcn": contract["fqcn"],
+            "kind": contract.get("kind", "class"),
+            "file": f"{contract['fqcn']}.json",
+            "instantiation": contract.get("instantiation", {}).get("strategy", "unknown"),
+        })
+        n += 1
 
     # Write/update the manifest (state/symbol-contracts.json) so it reflects
     # the per-FQCN files just written. Agents load individual files by FQCN;

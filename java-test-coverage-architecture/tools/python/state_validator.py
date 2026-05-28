@@ -581,6 +581,19 @@ def main() -> int:
         default=60,
         help="Maximum seconds to wait when --watch is set (default: 60).",
     )
+    ap.add_argument(
+        "--scope",
+        choices=("all", "contracts", "index"),
+        default="all",
+        help=(
+            "Restrict validation to a single artefact group (post-audit 2026-05-28):\n"
+            "  all       — full validation pass (default; runs after step 15)\n"
+            "  contracts — validate only state/symbol-contracts/ (run after step 6)\n"
+            "  index     — validate only state/index/             (run after step 9)\n"
+            "Scoped runs let the pipeline fail fast rather than burning 14 steps "
+            "before catching a schema violation."
+        ),
+    )
     args = ap.parse_args()
 
     # ── Resolver directorio de estado ────────────────────────────────────────
@@ -622,6 +635,16 @@ def main() -> int:
 
     rc = 0
 
+    # Scoped runs: invoked from the middle of the pipeline (after step 6 or 9)
+    # to validate one artefact group as soon as it is produced.
+    if args.scope == "contracts":
+        result = validate_symbol_contracts(SCHEMAS_DIR, state_dir, jsonschema)
+        return result if result != 0 else 0
+    if args.scope == "index":
+        result = validate_semantic_index(SCHEMAS_DIR, state_dir, jsonschema)
+        return result if result != 0 else 0
+
+    # Full validation (scope == "all"): runs as step 15.
     # ── 1. Validación estándar: schema → state/<name>.json ───────────────────
     rc |= validate_standard_schemas(SCHEMAS_DIR, state_dir, jsonschema)
 

@@ -29,7 +29,7 @@ Coordinar el flujo completo, validar gates G1–G8 entre fases y mantener `state
    - `symbol-contracts/<sut>.json` para cada SUT del batch,
    - `fixture-catalog.json` con fixtures para los tipos requeridos.
 3. Antes de compilar, exigir G1 (whitelist) y G6 (static pre-compile linter) sobre cada test propuesto.
-4. Antes de aplicar fix, consultar G7 (failure-memory).
+4. Antes de despachar a `repair-agent`, invocar `gate_runner.py --patch <patch> --context-pack <pack> --state state/` que evalúa G7 (failure-memory) y devuelve `BLOCKED` si `(errorCode, symbolFQN, fixId)` ya falló ≥ 2 ciclos o el `testCaseId` supera 3 intentos. **El LLM nunca cuenta intentos** — esa es responsabilidad del driver Python (`_G7_MAX_FAILED_ATTEMPTS`, `_G7_MAX_TESTCASE_ATTEMPTS` en `gate_runner.py`).
 5. Tras cada ciclo, evaluar G8 (convergencia).
 6. Escritura atómica en `state/` (`*.tmp` + rename); actualizar `checkpoints[]` con SHA-256.
 7. Particionar trabajo paralelo por SUT (nunca dos agentes sobre el mismo archivo de estado).

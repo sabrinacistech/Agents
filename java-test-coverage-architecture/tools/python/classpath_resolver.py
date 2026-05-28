@@ -85,8 +85,9 @@ def _walk_source_packages(roots: list[Path]) -> set[str]:
             continue
         # long_path() opts into Windows long-path API for generated-sources trees
         # that easily exceed MAX_PATH (260 chars) under target/.
-        for p, _, files in os.walk(long_path(root)):
-            for fn in files:
+        for p, dirs, files in os.walk(long_path(root)):
+            dirs.sort()
+            for fn in sorted(files):
                 if not fn.endswith(".java"):
                     continue
                 fp = Path(p) / fn

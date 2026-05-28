@@ -104,8 +104,9 @@ def scan_module(pom_path: Path) -> dict:
             continue
         # long_path() prefixes \\?\ on Windows so deeply nested OpenAPI/CXF
         # generated trees (frequently > MAX_PATH = 260) are still walkable.
-        for path, _, files in os.walk(long_path(gen_root)):
-            for fn in files:
+        for path, dirs, files in os.walk(long_path(gen_root)):
+            dirs.sort()
+            for fn in sorted(files):
                 if not fn.endswith(".java"):
                     continue
                 fp = Path(path) / fn

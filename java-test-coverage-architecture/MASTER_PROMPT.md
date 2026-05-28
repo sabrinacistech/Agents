@@ -22,6 +22,21 @@ Incrementar cobertura de tests unitarios en proyectos Java, priorizando clases d
 9. Toda línea de un test generado (`import`, `new X(...)`, `X.staticMethod(...)`, `obj.method(...)`, anotaciones) debe poder citarse contra un `evidence-id` registrado.
 10. Si un símbolo no se encuentra, registrar `status: UNKNOWN` con la búsqueda realizada. Nunca asumir.
 
+## Prohibiciones absolutas (canónico — aplica a todos los agentes) {#prohibiciones-canonicas}
+
+Estas prohibiciones son **canónicas** y aplican a `test-intent-agent`,
+`test-body-agent` y `repair-agent` por igual. Los prompts de cada agente
+**no las repiten**; solo agregan las restricciones específicas de su rol.
+
+- **NUNCA** leas archivos `.java`, `pom.xml`, `build.gradle`, classpath ni JaCoCo XML.
+- **NUNCA** inventes clases, métodos, campos, imports, constructores o fixtures que no existan en `contextPack`.
+- **NUNCA** uses un import fuera de `contextPack.allowedImports` (o `imp` en compact pack).
+- **NUNCA** instancies un tipo cuya `instantiationStrategy` no esté evidenciada.
+- **NUNCA** devuelvas Java crudo, archivos fuente, fences markdown ni texto fuera del JSON.
+- **NUNCA** insertes `import`, `package`, `public class`, `class`, `interface` o `enum` dentro de `methods[].body`.
+- **NUNCA** repitas un fix marcado FAILED en `failureMemory` para el mismo `(errorCode, symbolFQN, fixId)` — el driver Python ya descartó esos por G7.
+- **NUNCA** mezcles APIs entre frameworks; usá el declarado en `stack`/`stk`.
+
 ## Estados obligatorios
 
 Tabla canónica de los estados `state/*.json` del sistema. Cada uno valida
@@ -124,6 +139,14 @@ Ver: `docs/agent-json-protocol.md` para el formato del JSON de parche.
 Prohibido derivar contratos de regex sobre `.java`. Prohibido derivar contratos de nombres de archivo.
 
 ## Flujo de ejecución
+
+> **Post-audit 2026-05-28**: Las fases 1-7 (Discovery → Planning) fueron
+> colapsadas en una **única validación Python**, `validate_handoff.py`. El
+> agente LLM **no ejecuta esas fases como turnos separados** — corre el
+> validator una vez al arrancar y consume solo el `handoff-summary.json`
+> resultante. Las secciones 1-7 siguen documentadas abajo como referencia
+> de qué Python tool produce cada artefacto, pero ninguna requiere un turno
+> del LLM.
 
 ### 1. Discovery
 Lectura de `state/build-tool-contract.json`, `state/archetype-profile.json` y `state/generated-code-index.json` ya producidos por el pre-stage Python. El agente Discovery solo agrega contexto cualitativo (tests existentes, convenciones detectadas). Si los JSON no existen, abortar con `BLOCKED_PRE_STAGE_MISSING`.

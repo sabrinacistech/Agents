@@ -54,6 +54,10 @@ _ACTION_TO_ERROR_CODE: dict[str, str] = {
     "replaceCall":                  "REPLACE_CALL",
     "addMockBean":                  "SPRING_MISSING_MOCKBEAN",
     "useBuilder":                   "BUILDER_REQUIRED",
+    # New deterministic quality fixes (post-audit 2026-05-28):
+    "insertAaaComments":            "TQG_02_NO_AAA",
+    "removeUnusedStub":             "TQG_06_UNUSED_STUB",
+    "convertMockSutToInjectMocks":  "TQG_12_OVER_MOCK_SUT",
     "escalateToLLM":                "ESCALATED",
 }
 

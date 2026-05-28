@@ -33,10 +33,21 @@ SCHEMA_NAME = "context-pack"
 DEFAULT_MAX_IMPORTS = 40
 TOKENS_PER_BYTE = 0.25  # rough estimate: ~4 bytes per token for JSON
 
-# P3.d: only carry this many recent FAILED entries from failure-memory.json
-# into each per-SUT pack so the repair-agent budget stays constant cycle over
-# cycle. The repair-agent never sees the full state/failure-memory.json file.
-FAILURE_MEMORY_MAX_PER_SUT = 2
+# P3.d: cap FAILED entries from failure-memory.json that are projected into
+# each per-SUT pack. Capped to keep the repair-agent budget bounded.
+#
+# Selection policy (see project_failure_memory):
+#   1. group entries by errorCode so distinct failure modes are always
+#      represented before duplicates of the same errorCode are added;
+#   2. within each errorCode, prefer distinct fixId values so the agent never
+#      reapplies a fix that already failed;
+#   3. fall back to recency (lastSeenCycle desc) for any remaining slots.
+#
+# Raised from 2 → 8 (audit 2026-05-28): the previous cap hid the failure
+# history of cycles 3+ from the repair-agent, which led to repeated reuse of
+# strategies that had already been proven to fail. 8 is enough to surface ~4
+# distinct errorCodes with one historical retry each.
+FAILURE_MEMORY_MAX_PER_SUT = 8
 
 # Planner-only fields excluded from compact packs (P2.2).
 _COMPACT_CLASSIFICATION_DROP = {
@@ -105,8 +116,11 @@ def project_failure_memory(failure_memory: dict | None, sut_fqcn: str) -> list[d
         itself or a nested method/field reference);
       - prefer ``lastResult == "FAILED"`` (these are the ones the repair-agent
         must avoid retrying); SUCCESS entries are filtered out;
-      - sort by ``lastSeenCycle`` descending so older entries fall off first;
-      - cap to ``FAILURE_MEMORY_MAX_PER_SUT`` (default 2).
+      - diversity-first ordering: pick one representative per
+        (errorCode, fixId) tuple before doubling up on any single failure
+        mode (G7 anti-loop relies on seeing the full set of attempted fixes);
+      - within each tuple, prefer the most recent ``lastSeenCycle``;
+      - finally cap to ``FAILURE_MEMORY_MAX_PER_SUT``.
     """
     if not failure_memory:
         return []
@@ -127,8 +141,24 @@ def project_failure_memory(failure_memory: dict | None, sut_fqcn: str) -> list[d
 
     matched.sort(key=lambda e: int(e.get("lastSeenCycle") or 0), reverse=True)
 
+    # Diversity-first pass: pick at most one entry per (errorCode, fixId) tuple
+    # so distinct failure modes are always represented; recency already broke
+    # ties via the sort above.
+    seen_keys: set[tuple[str, str]] = set()
+    diverse: list[dict] = []
+    leftovers: list[dict] = []
+    for entry in matched:
+        key = (str(entry.get("errorCode", "")), str(entry.get("fixId", "")))
+        if key in seen_keys:
+            leftovers.append(entry)
+        else:
+            seen_keys.add(key)
+            diverse.append(entry)
+
+    selected = (diverse + leftovers)[:FAILURE_MEMORY_MAX_PER_SUT]
+
     projected: list[dict] = []
-    for entry in matched[:FAILURE_MEMORY_MAX_PER_SUT]:
+    for entry in selected:
         row = {
             "hash": str(entry.get("hash", "")),
             "errorCode": str(entry.get("errorCode", "")),
