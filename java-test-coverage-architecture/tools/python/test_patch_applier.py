@@ -103,26 +103,97 @@ def _normalize_sut(sut: Any) -> str | None:
 
 
 def sanitize_java_body(text: str) -> str:
-    """Undo common over-escaping artefacts produced by LLM JSON serialization.
+    """Normalize a method body for safe Java source writing.
 
-    Some agents double-escape when streaming JSON on Windows pipes, producing
-    literal "\\n" / "\\t" / "\\\"" sequences on disk. We do NOT touch real `\\` —
-    only the specific over-escape patterns observed in practice.
+    Two failure modes handled via a string-literal-aware state machine:
+
+      A) Real control characters inside a Java string literal — the LLM wrote
+         argument content with actual 0x0A/0x0D/0x09 bytes instead of Java
+         escape sequences, causing an "unclosed string literal" compile error
+         (on Windows, Python text-mode write further expands 0x0A → CRLF).
+         Fix: inside `"..."`, convert real newline/CR/tab to Java escapes.
+
+      B) Over-escaped statement separators — agent emitted backslash+n as line
+         break between statements (single-escape from json.loads, or double-
+         escape Windows pipe artefact).
+         Fix: outside `"..."`, convert (\\\\n or bare \\n when no real newlines
+         exist) to a real 0x0A.
     """
-    if not text or "\\" not in text:
+    if not text:
         return text
-    out = (
-        text
-        .replace("\\\\n", "\n")
-        .replace("\\\\t", "\t")
-        .replace("\\\\r", "")
-        .replace("\\\\\"", "\"")
-    )
-    # Single-escape fallback: if a body still has literal "\\n" but NO real newlines,
-    # the agent emitted escaped sequences that survived json.loads — unescape them.
-    if "\\n" in out and "\n" not in out:
-        out = out.replace("\\n", "\n").replace("\\t", "\t").replace("\\\"", "\"")
-    return out
+    if '"' not in text and '\\' not in text and '\r' not in text:
+        return text  # nothing to fix
+
+    has_real_newline = "\n" in text
+
+    result: list[str] = []
+    in_string = False
+    i = 0
+    n = len(text)
+
+    while i < n:
+        ch = text[i]
+
+        if in_string:
+            if ch == "\\":
+                # Consume backslash + next char verbatim: preserves valid Java
+                # escape sequences and prevents \" from closing the string.
+                result.append(ch)
+                if i + 1 < n:
+                    result.append(text[i + 1])
+                    i += 2
+                    continue
+            elif ch == '"':
+                in_string = False
+                result.append(ch)
+            elif ch == "\n":
+                result.append("\\n")   # real newline inside literal → Java escape
+            elif ch == "\r":
+                result.append("\\r")   # real CR inside literal → Java escape
+            elif ch == "\t":
+                result.append("\\t")   # real tab inside literal → Java escape
+            else:
+                result.append(ch)
+        else:
+            if ch == '"':
+                in_string = True
+                result.append(ch)
+            elif ch == "\\" and i + 1 < n:
+                nxt = text[i + 1]
+                if nxt == "\\" and i + 2 < n:
+                    # Double-backslash artefact (Windows pipe over-escaping).
+                    esc = text[i + 2]
+                    if esc == "n":
+                        result.append("\n")
+                        i += 3
+                        continue
+                    elif esc == "t":
+                        result.append("\t")
+                        i += 3
+                        continue
+                    elif esc == "r":
+                        i += 3           # drop \\r outside string literals
+                        continue
+                    elif esc == '"':
+                        result.append('"')
+                        i += 3
+                        continue
+                elif nxt == "n" and not has_real_newline:
+                    # Single-escape fallback: no real newlines anywhere in the body,
+                    # so backslash+n is a statement separator, not a Java escape.
+                    result.append("\n")
+                    i += 2
+                    continue
+                elif nxt == "t" and not has_real_newline:
+                    result.append("\t")
+                    i += 2
+                    continue
+                result.append(ch)
+            else:
+                result.append(ch)
+        i += 1
+
+    return "".join(result)
 
 
 def _validate_body(body: str) -> None:
