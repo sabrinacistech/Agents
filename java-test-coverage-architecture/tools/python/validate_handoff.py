@@ -100,6 +100,20 @@ def _top_suts(batch_plan: dict, limit: int = 10) -> list[dict]:
     return out
 
 
+def _first_module(doc: dict) -> dict:
+    """Return modules[0] if it's a non-empty list of dicts, else {}.
+
+    Phase 0 emits the per-module shape `{ "modules": [ { ... } ] }` for the
+    contract / archetype / stack JSONs. For mono-module repos we surface the
+    first module; multi-module summaries are out of scope (the LLM consumes
+    one batch-plan at a time anyway).
+    """
+    mods = doc.get("modules")
+    if isinstance(mods, list) and mods and isinstance(mods[0], dict):
+        return mods[0]
+    return {}
+
+
 def build_summary(state_dir: Path) -> dict:
     """Build the handoff summary the LLM will consume instead of the seven
     raw JSONs of phases 1-7."""
@@ -124,25 +138,35 @@ def build_summary(state_dir: Path) -> dict:
         t = str(c.get("type", "unknown"))
         class_buckets[t] = class_buckets.get(t, 0) + 1
 
+    archetype_mod = _first_module(archetype)
+    stack_mod = _first_module(stack)
+    parent = archetype_mod.get("parent", {}) if isinstance(archetype_mod.get("parent"), dict) else {}
+    implies = archetype_mod.get("implies", {}) if isinstance(archetype_mod.get("implies"), dict) else {}
+    test_blk = stack_mod.get("test", {}) if isinstance(stack_mod.get("test"), dict) else {}
+    mock_blk = stack_mod.get("mock", {}) if isinstance(stack_mod.get("mock"), dict) else {}
+    assert_blk = stack_mod.get("assert", {}) if isinstance(stack_mod.get("assert"), dict) else {}
+    di_blk = stack_mod.get("di", {}) if isinstance(stack_mod.get("di"), dict) else {}
+
     return {
         "schemaVersion": 1,
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "phase": "PRE_GENERATION",
         "status": "READY",
         "buildTool": {
-            "type": build_tool.get("buildTool", ""),
-            "groupId": build_tool.get("groupId", ""),
-            "javaVersion": build_tool.get("javaVersion", ""),
+            "type": build_tool.get("tool", "") or stack.get("buildTool", ""),
+            "groupId": parent.get("groupId", ""),
+            "javaVersion": build_tool.get("java", "") or stack.get("java", ""),
         },
         "archetype": {
-            "parent": archetype.get("parent", ""),
-            "namespace": archetype.get("namespace", ""),
+            "parent": parent.get("artifactId", ""),
+            "namespace": stack_mod.get("namespace", "") or implies.get("namespace", ""),
         },
         "stack": {
-            "testFramework": stack.get("testFramework", ""),
-            "mockingLib": stack.get("mockingLib", ""),
-            "assertionLib": stack.get("assertionLib", ""),
-            "diFramework": stack.get("diFramework", ""),
+            "testFramework": test_blk.get("framework", ""),
+            "mockingLib": mock_blk.get("framework", ""),
+            "assertionLib": assert_blk.get("framework", ""),
+            "diFramework": "spring" if di_blk.get("spring") else "",
+            "springBoot": di_blk.get("springBoot", ""),
             "blocked": bool(stack.get("blocked", False)),
         },
         "counts": {
