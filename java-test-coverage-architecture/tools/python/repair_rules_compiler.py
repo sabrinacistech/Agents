@@ -57,7 +57,7 @@ _ACTION_TO_ERROR_CODE: dict[str, str] = {
     # New deterministic quality fixes (post-audit 2026-05-28):
     "insertAaaComments":            "TQG_02_NO_AAA",
     "removeUnusedStub":             "TQG_06_UNUSED_STUB",
-    "convertMockSutToInjectMocks":  "TQG_12_OVER_MOCK_SUT",
+    "convertMockSutToInjectMocks":  "TQG_12_OVER_MOCK_SUT",  # SUT sub-kind from test_linter.py
     "escalateToLLM":                "ESCALATED",
 }
 

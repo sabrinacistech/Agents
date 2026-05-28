@@ -179,21 +179,40 @@ def remove_unused_stub(text: str, method: str) -> tuple[str, int]:
 
 def convert_mock_sut_to_inject_mocks(text: str, sut_simple_name: str) -> tuple[str, int]:
     """Replace ``@Mock`` with ``@InjectMocks`` for a field whose declared type
-    is exactly ``sut_simple_name``. Idempotent — already-converted fields are
-    left alone.
+    is exactly ``sut_simple_name``. Handles both layouts:
+
+      Same-line:   ``@Mock FooService sut;``
+      Next-line:   ``@Mock\\n    FooService sut;`` (optionally with extra
+                    annotations between).
+
+    Idempotent — fields already marked ``@InjectMocks`` are left alone.
     """
     if not sut_simple_name or not re.match(r"^\w+$", sut_simple_name):
         return text, 0
     se = re.escape(sut_simple_name)
-    # Match: optional whitespace + @Mock + same-line or next-line field decl
-    # of type `<sut>` (with optional spy/lenient annotations between).
-    pat = re.compile(
-        rf"(^\s*)@Mock(\b[^\n]*)\n(\s*(?:@[\w.]+\s*\n\s*)*)((?:private|protected|public)?\s*"
-        rf"(?:final\s+)?{se}\b)",
+    converted = 0
+
+    # Same-line pattern: `@Mock <maybe modifiers> SUT <name>;`
+    same_line = re.compile(
+        rf"(^\s*)@Mock(\s+)((?:(?:private|protected|public|final|static)\s+)*){se}\b",
         re.MULTILINE,
     )
-    new_text, n = pat.subn(lambda m: f"{m.group(1)}@InjectMocks{m.group(2)}\n{m.group(3)}{m.group(4)}", text)
-    return new_text, n
+    new_text, n = same_line.subn(
+        lambda m: f"{m.group(1)}@InjectMocks{m.group(2)}{m.group(3)}{sut_simple_name}", text
+    )
+    converted += n
+    text = new_text
+
+    # Multi-line pattern: `@Mock` on its own line, then the field declaration.
+    multi_line = re.compile(
+        rf"(^\s*)@Mock(\s*)\n(\s*(?:@[\w.]+\s*\n\s*)*)((?:(?:private|protected|public|final|static)\s+)*{se}\b)",
+        re.MULTILINE,
+    )
+    new_text, n = multi_line.subn(
+        lambda m: f"{m.group(1)}@InjectMocks{m.group(2)}\n{m.group(3)}{m.group(4)}", text
+    )
+    converted += n
+    return new_text, converted
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────

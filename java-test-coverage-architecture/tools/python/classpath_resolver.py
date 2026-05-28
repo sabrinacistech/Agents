@@ -135,12 +135,18 @@ def resolve_module(mod_dir: Path) -> dict:
     for p in _walk_source_packages([mod_dir / "target" / "generated-sources"]):
         packages_out.setdefault(p, "generated")
 
+    # Sort classes by FQCN for reproducible output (post-audit 2026-05-28).
+    # The jar iteration order Maven gives us is not stable across runs, which
+    # broke the input-hash cache for every downstream step. Consumers build a
+    # set from this list, so order is purely cosmetic — sorting is free.
+    classes_sorted = sorted(classes_out, key=lambda c: (c.get("fqcn", ""), c.get("jar", "")))
+
     return {
         "schemaVersion": 1,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "module": mod_dir.name,
         "packages": [{"name": k, "origin": v} for k, v in sorted(packages_out.items())],
-        "classes": classes_out[:50000],  # cap to avoid huge files
+        "classes": classes_sorted[:50000],  # cap to avoid huge files
         "_meta": {"resolveExit": rc},
     }
 

@@ -84,6 +84,45 @@ def _sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
+# Field names that change on every emission and would otherwise invalidate
+# every downstream cache entry. Stripped recursively from JSON inputs before
+# hashing (post-audit 2026-05-28).
+_VOLATILE_JSON_FIELDS: frozenset[str] = frozenset({
+    "generatedAt", "generated_at", "timestampUtc", "timestamp_utc",
+})
+
+
+def _strip_volatile(obj):
+    """Recursively drop volatile fields from a parsed JSON tree."""
+    if isinstance(obj, dict):
+        return {k: _strip_volatile(v) for k, v in obj.items() if k not in _VOLATILE_JSON_FIELDS}
+    if isinstance(obj, list):
+        return [_strip_volatile(v) for v in obj]
+    return obj
+
+
+def _sha256_stable(p: Path) -> str:
+    """Hash a file's content with volatile timestamps stripped if it's JSON.
+
+    Falls back to the raw binary hash on non-JSON files or when parsing
+    fails — that keeps the function safe for pom.xml and other inputs.
+    """
+    if p.suffix.lower() == ".json":
+        try:
+            with p.open("r", encoding="utf-8") as f:
+                doc = json.load(f)
+            canonical = json.dumps(
+                _strip_volatile(doc),
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        except (json.JSONDecodeError, OSError):
+            pass
+    return _sha256_file(p)
+
+
 def _safe_hash(parts: list[str]) -> str:
     h = hashlib.sha256()
     for s in sorted(parts):
@@ -119,14 +158,17 @@ def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
             return None
         for p in sorted(idx_dir.glob("*.json")):
             try:
-                parts.append(f"{p.name}:{_sha256_file(p)}")
+                parts.append(f"{p.name}:{_sha256_stable(p)}")
             except OSError:
                 return None
         return parts
     if step == "index":
-        # Step 9 consumes state/symbol-contracts/*.json (+ a few index inputs
-        # for whitelist/dep-graph/annotations). Hash all contracts; if --full
-        # was forced, skip the cache entirely so the rebuild is unconditional.
+        # Step 9 consumes state/symbol-contracts/*.json + import-whitelist.json.
+        # NOTE: dependency-graph.json is NOT an input — it is produced by
+        # step 11 (deps), which runs *after* index. Including it would make
+        # the hash unstable between cold and warm runs (cold: file absent,
+        # warm: file present → hashes never match). Discovered post-audit
+        # while validating cache hits end-to-end (2026-05-28).
         if getattr(args, "full_index", False):
             return None
         contracts_dir = out_dir / "symbol-contracts"
@@ -134,19 +176,15 @@ def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
             return None
         for p in sorted(contracts_dir.glob("*.json")):
             try:
-                parts.append(f"{p.name}:{_sha256_file(p)}")
+                parts.append(f"{p.name}:{_sha256_stable(p)}")
             except OSError:
                 return None
-        # Include the other inputs read by the writer (whitelist, dep-graph
-        # source files, annotations source files) so a stack-only change
-        # invalidates the index too.
-        for name in ("import-whitelist.json", "dependency-graph.json"):
-            p = out_dir / name
-            if p.exists():
-                try:
-                    parts.append(f"{name}:{_sha256_file(p)}")
-                except OSError:
-                    return None
+        wl = out_dir / "import-whitelist.json"
+        if wl.exists():
+            try:
+                parts.append(f"import-whitelist.json:{_sha256_stable(wl)}")
+            except OSError:
+                return None
         return parts
     if step == "planning":
         parts.append(f"mode={args.coverage_mode}")
@@ -161,7 +199,7 @@ def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
             p = out_dir / name
             if p.exists():
                 try:
-                    parts.append(f"{name}:{_sha256_file(p)}")
+                    parts.append(f"{name}:{_sha256_stable(p)}")
                 except OSError:
                     return None
         return parts
@@ -179,7 +217,7 @@ def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
             p = out_dir / name
             if p.exists():
                 try:
-                    parts.append(f"{name}:{_sha256_file(p)}")
+                    parts.append(f"{name}:{_sha256_stable(p)}")
                 except OSError:
                     return None
         return parts
@@ -371,6 +409,12 @@ def main() -> int:
             return False
         h = _safe_hash(sig)
         entry = cache_entries.get(name)
+        # Set DEBUG_CACHE=1 in the environment to surface the computed vs
+        # cached hash for each cacheable step (useful for diagnosing misses).
+        if os.environ.get("DEBUG_CACHE"):
+            cached = (entry or {}).get("inputHash", "<none>")
+            print(f"[DEBUG_CACHE] {name}: computed={h[:16]} cached={str(cached)[:16]}",
+                  file=sys.stderr)
         if entry and entry.get("inputHash") == h:
             emit_tool_summary(
                 name,

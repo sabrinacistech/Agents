@@ -449,12 +449,17 @@ def check_quality(
         })
 
     # ── TQG_12_OVER_MOCK: mocking the SUT or value objects.
+    # Post-audit 2026-05-28: split into TQG_12_OVER_MOCK_SUT (auto-repairable
+    # via convertMockSutToInjectMocks) vs TQG_12_OVER_MOCK (value-object case
+    # which still needs LLM judgement). The sub-kind lets repair_dispatch.py
+    # pick the deterministic path for SUT-mocks without misfiring on value
+    # objects.
     for m in MOCK_OF_TYPE_RE.finditer(text):
         typ = m.group(1)
         if sut_simple and typ == sut_simple:
             v.append({
                 "gate": "G6",
-                "kind": "TQG_12_OVER_MOCK",
+                "kind": "TQG_12_OVER_MOCK_SUT",
                 "skill": "11-quality/12",
                 "symbol": typ,
                 "reason": f"SUT '{typ}' must not be mocked",
@@ -472,7 +477,7 @@ def check_quality(
         if sut_simple and typ == sut_simple:
             v.append({
                 "gate": "G6",
-                "kind": "TQG_12_OVER_MOCK",
+                "kind": "TQG_12_OVER_MOCK_SUT",
                 "skill": "11-quality/12",
                 "symbol": typ,
                 "reason": f"SUT '{typ}' must not be annotated @Mock/@Spy/@MockBean",
