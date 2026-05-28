@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-28T00:23:24.312754+00:00",
+  "count": 10,
+  "classes": {
+    "com.sabrinacistech.multiclusters.ClusterStatusServiceApplication": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.config.ClusterConfigProperties": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.controller.ClusterStatusController": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.dto.ClusterStatusDto": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.dto.ResponseApiClusterStatus": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.dto.ResponseMetadata": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.model.ClusterStatusDocument": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.repository.ClusterStatusRepository": {
+      "kind": "interface",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "mock",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.service.ClusterStatusStore": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "constructor",
+      "source": null
+    },
+    "com.sabrinacistech.multiclusters.util.LogSanitizer": {
+      "kind": "class",
+      "modifiers": [],
+      "annotations": [],
+      "parents": {
+        "extends": null,
+        "implements": []
+      },
+      "instantiation": "mock",
+      "source": null
+    }
+  },
+  "_fingerprints": {
+    "com.sabrinacistech.multiclusters.ClusterStatusServiceApplication.json": "a9eb4b9400f000fe05479cae56b9621ca8443db82063c201514336ce2d276813",
+    "com.sabrinacistech.multiclusters.config.ClusterConfigProperties.json": "59d3ebf5ca98ed2860a336d4f9c13b261594d6c0bc86c99062af6e50fc6ebd9b",
+    "com.sabrinacistech.multiclusters.controller.ClusterStatusController.json": "d61c1408af718e922911d42a4852e19674b59c4f703038ca402578a31185640d",
+    "com.sabrinacistech.multiclusters.dto.ClusterStatusDto.json": "bced446a616b96d4fb174cfeb2d2d73adf56fa1a16bb4108194e77c183d82518",
+    "com.sabrinacistech.multiclusters.dto.ResponseApiClusterStatus.json": "fc27f1edc5817603c5edf32db6834a25731c00db744720adb0ad54f3eea6d6dc",
+    "com.sabrinacistech.multiclusters.dto.ResponseMetadata.json": "51c584423181e37656b73c37a59e997d8dbc91e3713f696f1474d79d4004481c",
+    "com.sabrinacistech.multiclusters.model.ClusterStatusDocument.json": "e967bc8d573d384ff4ec6726070dc154bf9931ba91acbc5f3d35e6ef7a8412d1",
+    "com.sabrinacistech.multiclusters.repository.ClusterStatusRepository.json": "bed04b2ddd95cdf7c72173f7ff87cf0d23aca73aa01e9e5ef1e20ea25bb7ae66",
+    "com.sabrinacistech.multiclusters.service.ClusterStatusStore.json": "3b7b86b481847465323379db24416a9cd0a835a82fd3690e250f8bae1e152a53",
+    "com.sabrinacistech.multiclusters.util.LogSanitizer.json": "7686dfbbe41b5def3ef06346aff71fc67617ba519134d4df291b59bc018f14f1"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "module": "C:\\repo\\multi-clusters\\cluster-status-service",
+  "generators": [],
+  "excludedFqcns": [],
+  "excludedPackages": [
+    "build/generated/**",
+    "src/generated/**",
+    "target/generated-sources/**"
+  ],
+  "blocked": []
+}

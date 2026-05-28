@@ -1,0 +1,767 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-27T00:17:17+00:00",
+  "rulesDir": "C:\\repo\\Agents\\java-test-coverage-architecture\\repair-rules",
+  "totalRules": 81,
+  "files": [
+    {
+      "file": "builders.rules",
+      "count": 13,
+      "rules": [
+        {
+          "line": 6,
+          "pattern": "<.*> is abstract; cannot be instantiated",
+          "action": "useBuilder",
+          "args": "<symbol>",
+          "errorCode": "BUILDER_REQUIRED",
+          "fixTemplate": "useBuilder(<symbol>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 7,
+          "pattern": "cannot find symbol.*new .*_Builder",
+          "action": "useBuilder",
+          "args": "<symbol>",
+          "errorCode": "BUILDER_REQUIRED",
+          "fixTemplate": "useBuilder(<symbol>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 10,
+          "pattern": "cannot find symbol.*\\\\.builder\\\\(\\\\)",
+          "action": "escalateToLLM",
+          "args": "\"lombok-builder-missing-source\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"lombok-builder-missing-source\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 11,
+          "pattern": "method .*build\\\\(\\\\) .*non-static",
+          "action": "useBuilder",
+          "args": "<symbol>",
+          "errorCode": "BUILDER_REQUIRED",
+          "fixTemplate": "useBuilder(<symbol>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 14,
+          "pattern": "java.lang.IllegalStateException: Not set: \\\\[(.*)\\\\]",
+          "action": "setBuilderRequiredFields",
+          "args": "$1",
+          "errorCode": "GENERIC",
+          "fixTemplate": "setBuilderRequiredFields($1)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 17,
+          "pattern": "package .*\\\\._.* does not exist",
+          "action": "triggerAnnotationProcessing",
+          "args": "",
+          "errorCode": "GENERIC",
+          "fixTemplate": "triggerAnnotationProcessing()",
+          "evidenceRequired": true
+        },
+        {
+          "line": 18,
+          "pattern": "cannot find symbol.*_Builder",
+          "action": "triggerAnnotationProcessing",
+          "args": "",
+          "errorCode": "GENERIC",
+          "fixTemplate": "triggerAnnotationProcessing()",
+          "evidenceRequired": true
+        },
+        {
+          "line": 21,
+          "pattern": "method setX in class .* cannot be applied",
+          "action": "escalateToLLM",
+          "args": "\"builder-setter-shape\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"builder-setter-shape\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 22,
+          "pattern": "clear is not abstract and does not override",
+          "action": "escalateToLLM",
+          "args": "\"builder-clear-overload\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"builder-clear-overload\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 25,
+          "pattern": "Cannot instantiate the type (.*)",
+          "action": "applyInstantiationStrategy",
+          "args": "$1",
+          "errorCode": "GENERIC",
+          "fixTemplate": "applyInstantiationStrategy($1)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 26,
+          "pattern": "The constructor (.*) is undefined",
+          "action": "applyInstantiationStrategy",
+          "args": "$1",
+          "errorCode": "GENERIC",
+          "fixTemplate": "applyInstantiationStrategy($1)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 27,
+          "pattern": "The method (.*) is undefined for the type (.*)",
+          "action": "replaceWithContractMethod",
+          "args": "$2,$1",
+          "errorCode": "GENERIC",
+          "fixTemplate": "replaceWithContractMethod($2,$1)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 28,
+          "pattern": "new ([A-Za-z0-9_]+_Builder)",
+          "action": "replaceWithDeclaredBuilderOrBlock",
+          "args": "$1",
+          "errorCode": "GENERIC",
+          "fixTemplate": "replaceWithDeclaredBuilderOrBlock($1)",
+          "evidenceRequired": true
+        }
+      ]
+    },
+    {
+      "file": "imports.rules",
+      "count": 33,
+      "rules": [
+        {
+          "line": 7,
+          "pattern": "cannot find symbol.*MockitoExtension",
+          "action": "addImport",
+          "args": "org.mockito.junit.jupiter.MockitoExtension",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.mockito.junit.jupiter.MockitoExtension)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 8,
+          "pattern": "cannot find symbol.*ExtendWith",
+          "action": "addImport",
+          "args": "org.junit.jupiter.api.extension.ExtendWith",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.junit.jupiter.api.extension.ExtendWith)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 9,
+          "pattern": "cannot find symbol.*\\\\bTest\\\\b",
+          "action": "addImport",
+          "args": "org.junit.jupiter.api.Test",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.junit.jupiter.api.Test)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 10,
+          "pattern": "cannot find symbol.*BeforeEach",
+          "action": "addImport",
+          "args": "org.junit.jupiter.api.BeforeEach",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.junit.jupiter.api.BeforeEach)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 11,
+          "pattern": "cannot find symbol.*AfterEach",
+          "action": "addImport",
+          "args": "org.junit.jupiter.api.AfterEach",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.junit.jupiter.api.AfterEach)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 12,
+          "pattern": "cannot find symbol.*DisplayName",
+          "action": "addImport",
+          "args": "org.junit.jupiter.api.DisplayName",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.junit.jupiter.api.DisplayName)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 13,
+          "pattern": "cannot find symbol.*ParameterizedTest",
+          "action": "addImport",
+          "args": "org.junit.jupiter.params.ParameterizedTest",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.junit.jupiter.params.ParameterizedTest)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 14,
+          "pattern": "cannot find symbol.*ValueSource",
+          "action": "addImport",
+          "args": "org.junit.jupiter.params.provider.ValueSource",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.junit.jupiter.params.provider.ValueSource)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 17,
+          "pattern": "cannot find symbol.*\\\\bMock\\\\b",
+          "action": "addImport",
+          "args": "org.mockito.Mock",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.mockito.Mock)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 18,
+          "pattern": "cannot find symbol.*InjectMocks",
+          "action": "addImport",
+          "args": "org.mockito.InjectMocks",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.mockito.InjectMocks)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 19,
+          "pattern": "cannot find symbol.*\\\\bSpy\\\\b",
+          "action": "addImport",
+          "args": "org.mockito.Spy",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.mockito.Spy)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 20,
+          "pattern": "cannot find symbol.*\\\\bwhen\\\\b",
+          "action": "addImport",
+          "args": "static org.mockito.Mockito.when",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.mockito.Mockito.when)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 21,
+          "pattern": "cannot find symbol.*\\\\bverify\\\\b",
+          "action": "addImport",
+          "args": "static org.mockito.Mockito.verify",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.mockito.Mockito.verify)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 22,
+          "pattern": "cannot find symbol.*\\\\bany\\\\b\\\\(",
+          "action": "addImport",
+          "args": "static org.mockito.ArgumentMatchers.any",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.mockito.ArgumentMatchers.any)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 23,
+          "pattern": "cannot find symbol.*\\\\beq\\\\b\\\\(",
+          "action": "addImport",
+          "args": "static org.mockito.ArgumentMatchers.eq",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.mockito.ArgumentMatchers.eq)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 24,
+          "pattern": "cannot find symbol.*\\\\btimes\\\\b\\\\(",
+          "action": "addImport",
+          "args": "static org.mockito.Mockito.times",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.mockito.Mockito.times)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 25,
+          "pattern": "cannot find symbol.*\\\\bnever\\\\b\\\\(",
+          "action": "addImport",
+          "args": "static org.mockito.Mockito.never",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.mockito.Mockito.never)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 26,
+          "pattern": "cannot find symbol.*\\\\blenient\\\\b",
+          "action": "addImport",
+          "args": "static org.mockito.Mockito.lenient",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.mockito.Mockito.lenient)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 29,
+          "pattern": "cannot find symbol.*assertThat\\\\b",
+          "action": "addImport",
+          "args": "static org.assertj.core.api.Assertions.assertThat",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.assertj.core.api.Assertions.assertThat)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 30,
+          "pattern": "cannot find symbol.*assertThatThrownBy",
+          "action": "addImport",
+          "args": "static org.assertj.core.api.Assertions.assertThatThrownBy",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(static org.assertj.core.api.Assertions.assertThatThrownBy)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 33,
+          "pattern": "cannot find symbol.*SpringBootTest",
+          "action": "addImport",
+          "args": "org.springframework.boot.test.context.SpringBootTest",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.springframework.boot.test.context.SpringBootTest)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 34,
+          "pattern": "cannot find symbol.*MockBean",
+          "action": "addImport",
+          "args": "org.springframework.boot.test.mock.mockito.MockBean",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.springframework.boot.test.mock.mockito.MockBean)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 35,
+          "pattern": "cannot find symbol.*WebMvcTest",
+          "action": "addImport",
+          "args": "org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 36,
+          "pattern": "cannot find symbol.*MockMvc\\\\b",
+          "action": "addImport",
+          "args": "org.springframework.test.web.servlet.MockMvc",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.springframework.test.web.servlet.MockMvc)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 37,
+          "pattern": "cannot find symbol.*ActiveProfiles",
+          "action": "addImport",
+          "args": "org.springframework.test.context.ActiveProfiles",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.springframework.test.context.ActiveProfiles)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 40,
+          "pattern": "cannot find symbol.*StepVerifier",
+          "action": "addImport",
+          "args": "reactor.test.StepVerifier",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(reactor.test.StepVerifier)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 41,
+          "pattern": "cannot find symbol.*\\\\bMono\\\\b",
+          "action": "addImport",
+          "args": "reactor.core.publisher.Mono",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(reactor.core.publisher.Mono)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 42,
+          "pattern": "cannot find symbol.*\\\\bFlux\\\\b",
+          "action": "addImport",
+          "args": "reactor.core.publisher.Flux",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(reactor.core.publisher.Flux)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 45,
+          "pattern": "reference to .* is ambiguous",
+          "action": "escalateToLLM",
+          "args": "\"ambiguous-symbol\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"ambiguous-symbol\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 48,
+          "pattern": "The import (.*) cannot be resolved",
+          "action": "removeImport",
+          "args": "$1",
+          "errorCode": "UNRESOLVABLE_IMPORT",
+          "fixTemplate": "removeImport($1)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 49,
+          "pattern": "(.*) cannot be resolved to a type",
+          "action": "resolveUniqueImportFromWhitelist",
+          "args": "$1",
+          "errorCode": "UNRESOLVED_TYPE",
+          "fixTemplate": "resolveUniqueImportFromWhitelist($1)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 50,
+          "pattern": "The type (.*) is not visible",
+          "action": "removeUsageAndEscalate",
+          "args": "\"non-public-type\"",
+          "errorCode": "NON_PUBLIC_TYPE",
+          "fixTemplate": "removeUsageAndEscalate(\"non-public-type\")",
+          "evidenceRequired": true
+        },
+        {
+          "line": 51,
+          "pattern": "The method .* refers to the missing type .*",
+          "action": "escalateToLLM",
+          "args": "\"missing-type-in-classpath\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"missing-type-in-classpath\")",
+          "evidenceRequired": false
+        }
+      ]
+    },
+    {
+      "file": "junit.rules",
+      "count": 10,
+      "rules": [
+        {
+          "line": 5,
+          "pattern": "No tests found .*JUnit 4",
+          "action": "migrateToJUnit5",
+          "args": "<testClass>",
+          "errorCode": "GENERIC",
+          "fixTemplate": "migrateToJUnit5(<testClass>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 6,
+          "pattern": "@RunWith not applicable .*Jupiter",
+          "action": "replaceAnnotation",
+          "args": "@RunWith(MockitoJUnitRunner), @ExtendWith(MockitoExtension)",
+          "errorCode": "GENERIC",
+          "fixTemplate": "replaceAnnotation(@RunWith(MockitoJUnitRunner), @ExtendWith(MockitoExtension))",
+          "evidenceRequired": true
+        },
+        {
+          "line": 7,
+          "pattern": "cannot find symbol.*RunWith",
+          "action": "escalateToLLM",
+          "args": "\"junit-version-mix\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"junit-version-mix\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 10,
+          "pattern": "@Before is not applicable",
+          "action": "replaceAnnotation",
+          "args": "@Before, @BeforeEach",
+          "errorCode": "GENERIC",
+          "fixTemplate": "replaceAnnotation(@Before, @BeforeEach)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 11,
+          "pattern": "@After is not applicable",
+          "action": "replaceAnnotation",
+          "args": "@After, @AfterEach",
+          "errorCode": "GENERIC",
+          "fixTemplate": "replaceAnnotation(@After, @AfterEach)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 12,
+          "pattern": "@BeforeClass .*static",
+          "action": "replaceAnnotation",
+          "args": "@BeforeClass, @BeforeAll",
+          "errorCode": "GENERIC",
+          "fixTemplate": "replaceAnnotation(@BeforeClass, @BeforeAll)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 15,
+          "pattern": "org.junit.Assert",
+          "action": "replaceImport",
+          "args": "org.junit.Assert, org.junit.jupiter.api.Assertions",
+          "errorCode": "GENERIC",
+          "fixTemplate": "replaceImport(org.junit.Assert, org.junit.jupiter.api.Assertions)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 16,
+          "pattern": "Assert\\\\.assertEquals",
+          "action": "replaceCall",
+          "args": "Assert.assertEquals, org.junit.jupiter.api.Assertions.assertEquals",
+          "errorCode": "REPLACE_CALL",
+          "fixTemplate": "replaceCall(Assert.assertEquals, org.junit.jupiter.api.Assertions.assertEquals)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 22,
+          "pattern": "@ParameterizedTest .*no source",
+          "action": "escalateToLLM",
+          "args": "\"parameterized-no-source\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"parameterized-no-source\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 25,
+          "pattern": "expected .* but was .*Exception",
+          "action": "escalateToLLM",
+          "args": "\"exception-assert-shape\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"exception-assert-shape\")",
+          "evidenceRequired": false
+        }
+      ]
+    },
+    {
+      "file": "mockito.rules",
+      "count": 13,
+      "rules": [
+        {
+          "line": 5,
+          "pattern": "PotentialStubbingProblem",
+          "action": "wrapWith",
+          "args": "lenient",
+          "errorCode": "MOCKITO_STRICT_STUBBING",
+          "fixTemplate": "wrapWith(lenient)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 6,
+          "pattern": "UnnecessaryStubbingException",
+          "action": "removeStub",
+          "args": "<symbol>",
+          "errorCode": "MOCKITO_UNNECESSARY_STUBBING",
+          "fixTemplate": "removeStub(<symbol>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 7,
+          "pattern": "MissingMethodInvocationException",
+          "action": "escalateToLLM",
+          "args": "\"missing-invocation\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"missing-invocation\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 10,
+          "pattern": "cannot mock .* final class",
+          "action": "useMockMaker",
+          "args": "mock-maker-inline",
+          "errorCode": "MOCKITO_FINAL_CLASS",
+          "fixTemplate": "useMockMaker(mock-maker-inline)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 11,
+          "pattern": "Cannot instantiate @InjectMocks field",
+          "action": "escalateToLLM",
+          "args": "\"inject-mocks-ambiguous\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"inject-mocks-ambiguous\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 14,
+          "pattern": "InvalidUseOfMatchersException",
+          "action": "normalizeMatchers",
+          "args": "",
+          "errorCode": "MOCKITO_MATCHER_MISUSE",
+          "fixTemplate": "normalizeMatchers()",
+          "evidenceRequired": true
+        },
+        {
+          "line": 15,
+          "pattern": "Misplaced or misused argument matcher",
+          "action": "normalizeMatchers",
+          "args": "",
+          "errorCode": "MOCKITO_MATCHER_MISUSE",
+          "fixTemplate": "normalizeMatchers()",
+          "evidenceRequired": true
+        },
+        {
+          "line": 18,
+          "pattern": "NotAMockException",
+          "action": "escalateToLLM",
+          "args": "\"spy-target-not-mock\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"spy-target-not-mock\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 21,
+          "pattern": "TooFewActualInvocations",
+          "action": "escalateToLLM",
+          "args": "\"verify-count-mismatch\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"verify-count-mismatch\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 22,
+          "pattern": "TooManyActualInvocations",
+          "action": "escalateToLLM",
+          "args": "\"verify-count-mismatch\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"verify-count-mismatch\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 23,
+          "pattern": "NoInteractionsWanted",
+          "action": "escalateToLLM",
+          "args": "\"verify-no-interactions\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"verify-no-interactions\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 26,
+          "pattern": "when\\\\(.*\\\\)\\\\.thenReturn\\\\(.*\\\\) on void",
+          "action": "replaceCall",
+          "args": "when(..).thenReturn(..), doNothing().when(..)",
+          "errorCode": "REPLACE_CALL",
+          "fixTemplate": "replaceCall(when(..).thenReturn(..), doNothing().when(..))",
+          "evidenceRequired": true
+        },
+        {
+          "line": 27,
+          "pattern": "thenThrow.* on void method",
+          "action": "replaceCall",
+          "args": "when(..).thenThrow(..), doThrow(..).when(..)",
+          "errorCode": "REPLACE_CALL",
+          "fixTemplate": "replaceCall(when(..).thenThrow(..), doThrow(..).when(..))",
+          "evidenceRequired": true
+        }
+      ]
+    },
+    {
+      "file": "spring.rules",
+      "count": 12,
+      "rules": [
+        {
+          "line": 5,
+          "pattern": "NoSuchBeanDefinitionException: .*",
+          "action": "addMockBean",
+          "args": "<symbol>",
+          "errorCode": "SPRING_MISSING_MOCKBEAN",
+          "fixTemplate": "addMockBean(<symbol>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 6,
+          "pattern": "UnsatisfiedDependencyException",
+          "action": "addMockBean",
+          "args": "<symbol>",
+          "errorCode": "SPRING_MISSING_MOCKBEAN",
+          "fixTemplate": "addMockBean(<symbol>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 7,
+          "pattern": "BeanCreationException",
+          "action": "escalateToLLM",
+          "args": "\"bean-creation\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"bean-creation\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 10,
+          "pattern": "WebMvcTest .* requires .*",
+          "action": "addMockBean",
+          "args": "<symbol>",
+          "errorCode": "SPRING_MISSING_MOCKBEAN",
+          "fixTemplate": "addMockBean(<symbol>)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 11,
+          "pattern": "DataJpaTest .* repository not found",
+          "action": "escalateToLLM",
+          "args": "\"datajpa-misconfig\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"datajpa-misconfig\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 14,
+          "pattern": "Failed to load ApplicationContext",
+          "action": "escalateToLLM",
+          "args": "\"context-load-failure\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"context-load-failure\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 15,
+          "pattern": "IllegalStateException: Failed to load ApplicationContext",
+          "action": "escalateToLLM",
+          "args": "\"context-load-failure\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"context-load-failure\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 18,
+          "pattern": "No active profile set",
+          "action": "addAnnotation",
+          "args": "<testClass>, @ActiveProfiles(\"test\")",
+          "errorCode": "MISSING_ANNOTATION",
+          "fixTemplate": "addAnnotation(<testClass>, @ActiveProfiles(\"test\"))",
+          "evidenceRequired": true
+        },
+        {
+          "line": 21,
+          "pattern": "No qualifying bean of type 'MockMvc'",
+          "action": "addAnnotation",
+          "args": "<testClass>, @AutoConfigureMockMvc",
+          "errorCode": "MISSING_ANNOTATION",
+          "fixTemplate": "addAnnotation(<testClass>, @AutoConfigureMockMvc)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 22,
+          "pattern": "Status expected:<200> but was:<404>",
+          "action": "escalateToLLM",
+          "args": "\"route-mismatch\"",
+          "errorCode": "ESCALATED",
+          "fixTemplate": "escalateToLLM(\"route-mismatch\")",
+          "evidenceRequired": false
+        },
+        {
+          "line": 25,
+          "pattern": "cannot find symbol.*AutoConfigureMockMvc",
+          "action": "addImport",
+          "args": "org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc)",
+          "evidenceRequired": true
+        },
+        {
+          "line": 26,
+          "pattern": "cannot find symbol.*TestConfiguration",
+          "action": "addImport",
+          "args": "org.springframework.boot.test.context.TestConfiguration",
+          "errorCode": "MISSING_IMPORT",
+          "fixTemplate": "addImport(org.springframework.boot.test.context.TestConfiguration)",
+          "evidenceRequired": true
+        }
+      ]
+    }
+  ]
+}
