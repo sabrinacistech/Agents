@@ -46,9 +46,7 @@ from common import _TimedRun, atomic_write_json  # noqa: E402
 
 SCHEMA_VERSION = 1
 
-# Steps in canonical execution order. Each entry: (skip_name, label, args_fn).
-# args_fn returns the CLI arg list for that step or None to skip dynamically.
-
+# Step names accepted by --skip. Mirror the order of execution in main().
 _STEP_SKIP_NAMES = (
     "index", "stack", "bytecode", "source",
     "classification", "deps", "validate",

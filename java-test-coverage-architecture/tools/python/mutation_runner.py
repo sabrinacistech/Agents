@@ -37,7 +37,6 @@ import json
 import re
 import subprocess
 import sys
-import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,7 +49,6 @@ SCHEMA_VERSION = 1
 
 # ── PIT plugin detection ──────────────────────────────────────────────────────
 
-_PIT_GAV = ("org.pitest", "pitest-maven")
 _PIT_RE = re.compile(
     r"<groupId>\s*org\.pitest\s*</groupId>\s*<artifactId>\s*pitest-maven\s*</artifactId>",
     re.IGNORECASE | re.DOTALL,

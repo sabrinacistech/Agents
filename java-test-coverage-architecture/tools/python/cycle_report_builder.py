@@ -37,7 +37,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import _TimedRun, atomic_write_json, emit_tool_summary, load_json  # noqa: E402
+from common import _TimedRun, atomic_write_json, load_json  # noqa: E402
 
 SCHEMA_VERSION = 1
 MAX_RECOMMENDATIONS = 5
@@ -120,7 +120,6 @@ def build_sut_report(sut_result: dict, per_class: list[dict]) -> dict:
 def build_recommendations(
     sut_reports: list[dict],
     coverage_delta: dict,
-    sut_results: list[dict],
     context_packs: dict[str, dict],
 ) -> list[str]:
     """Apply the recommendation template table; max 5 entries."""
@@ -216,7 +215,7 @@ def build_report(
     g8 = total_compile == 0
 
     recommendations = build_recommendations(
-        sut_reports, coverage_delta, sut_results, context_packs or {}
+        sut_reports, coverage_delta, context_packs or {}
     )
 
     return {
