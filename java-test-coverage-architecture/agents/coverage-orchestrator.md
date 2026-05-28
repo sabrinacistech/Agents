@@ -87,9 +87,9 @@ orquestador invoca las herramientas; no hay agente LLM intermedio.
 | State validation     | `state_validator.py`              | (no artifact; gate before LLM stage)                             |
 | Context packs        | `context_pack_builder.py`         | `state/context-packs/<safe_fqcn>.json` (+ `-compact/` opcional)  |
 | Generation (LLM)     | `test-intent-agent` + `test-body-agent` | patch JSON → `tools/python/test_patch_applier.py`          |
-| Pre-compile lint     | `test_linter.py`                  | gate G6 (no artifact)                                            |
+| Pre-compile lint     | `gate_runner.py` → `test_linter.py` (G6-quality ON por default) | `state/linter-violations.json` (violaciones G1/G2/G5/G6-quality estructuradas) + `state/_summaries/gates.json` |
 | Narrow validation    | `narrow_test_runner.py` + `compile_error_parser.py` | `state/_summaries/build-output.log` + `state/compile-error-index.json` + `state/coverage-delta.json` |
-| Repair (LLM)         | `repair-agent`                    | nuevo patch JSON                                                 |
+| Repair (LLM)         | `repair-agent`                    | Consume `state/linter-violations.json` (procesado antes que `compile-error-index.json` contra `repair-rules/quality.rules`) → nuevo patch JSON |
 | Cycle summary        | `cycle_summarizer.py`             | `state/_summaries/cycle-<N>.json`                                |
 | Reporting (LLM)      | `reporting-agent`                 | reporte final                                                    |
 

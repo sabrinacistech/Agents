@@ -585,7 +585,7 @@ def lint(
     stack_profile: dict | None = None,
     index_dir: Path | None = None,
     context_pack: dict | None = None,
-    quality_checks: bool = False,
+    quality_checks: bool = True,
 ) -> dict:
     text = test_file.read_text(encoding="utf-8", errors="ignore")
     classes = {c["fqcn"]: c for c in whitelist.get("classes", [])}
@@ -844,12 +844,15 @@ def main() -> int:
         ),
     )
     ap.add_argument(
-        "--quality-checks",
-        action="store_true",
+        "--no-quality-checks",
+        action="store_false",
+        dest="quality_checks",
+        default=True,
         help=(
-            "Enable G6-quality checks (skills/11-quality/): AAA structure, "
-            "naming, anti-patterns (mystery-guest, coupled/brittle, eager, "
-            "over-mocking, assert-free), non-determinism. See "
+            "Disable G6-quality checks (skills/11-quality/). Default: enabled. "
+            "When enabled, enforces AAA structure, naming, anti-patterns "
+            "(mystery-guest, coupled/brittle, eager, over-mocking, assert-free) "
+            "and non-determinism. See "
             "skills/07-generation/test-quality-gate.md for the rule catalog."
         ),
     )

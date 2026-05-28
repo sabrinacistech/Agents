@@ -162,6 +162,9 @@ def gate_g6(state_dir: Path, test_file: Path | None) -> dict:
             "blockedReason": "G6_LINTER_FAIL",
             "reason": f"test file not found: {test_file}",
         }
+    # G6-quality (skills/11-quality/) corre por default desde test_linter.py.
+    # No se pasa --no-quality-checks: queremos los 14 checks activos siempre.
+    context_pack_path = state_dir / "context-packs" / f"{test_file.stem.replace('Test', '')}.json"
     cmd = [
         sys.executable,
         str(linter),
@@ -171,6 +174,8 @@ def gate_g6(state_dir: Path, test_file: Path | None) -> dict:
         "--stack-profile", str(state_dir / "stack-profile.json"),
         "--index", str(state_dir / "index"),
     ]
+    if context_pack_path.exists():
+        cmd.extend(["--context-pack", str(context_pack_path)])
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     except Exception as exc:
@@ -179,15 +184,41 @@ def gate_g6(state_dir: Path, test_file: Path | None) -> dict:
             "blockedReason": "G6_LINTER_FAIL",
             "reason": f"linter invocation failed: {exc}",
         }
+
+    # Parse linter report and persist violations for downstream consumers
+    # (repair-agent reads state/linter-violations.json and maps each entry
+    # against repair-rules/quality.rules).
+    violations: list[dict] = []
+    try:
+        report = json.loads(proc.stdout) if proc.stdout.strip() else {}
+        violations = report.get("violations") or []
+    except json.JSONDecodeError:
+        # Linter crashed before producing JSON; keep violations empty and
+        # fall back to the tail in the FAIL branch below.
+        report = {}
+
+    out_path = state_dir / "linter-violations.json"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schemaVersion": 1,
+        "testFile": str(test_file),
+        "violations": violations,
+        "violationCount": len(violations),
+    }
+    with out_path.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, ensure_ascii=False)
+
     if proc.returncode != 0:
         tail = (proc.stdout + proc.stderr).strip().splitlines()[-20:]
         return {
             "status": "FAIL",
             "blockedReason": "G6_LINTER_FAIL",
             "exitCode": proc.returncode,
+            "violationCount": len(violations),
+            "violationsPath": str(out_path),
             "tail": tail,
         }
-    return {"status": "PASS"}
+    return {"status": "PASS", "violationCount": 0, "violationsPath": str(out_path)}
 
 
 # ── main ───────────────────────────────────────────────────────────────────────
