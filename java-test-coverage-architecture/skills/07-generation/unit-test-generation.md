@@ -27,9 +27,18 @@ Emitir tests JUnit que compilen y citen evidencia. Cero invención de símbolos.
    ```
 
 ## Reglas
-- Un test por escenario (happy / branch / exception).
-- Nombrado: `should<Behavior>_when<Condition>` o `methodName_condition_expected`.
-- Prohibido `Thread.sleep`, `System.out`, fechas no fijas, aleatorios sin seed.
+- Un test por escenario (happy / branch / exception) → skill [11-quality/08](../11-quality/08-test-coverage-quality.md).
+- Nombrado: `should<Behavior>_when<Condition>` o `methodName_condition_expected` → skill [11-quality/03](../11-quality/03-test-naming.md).
+- Prohibido `Thread.sleep`, `System.out`, fechas no fijas, aleatorios sin seed → skill [11-quality/11](../11-quality/11-antipattern-eager-sleeping.md).
 - Prohibido `@Ignore`/`@Disabled` salvo decisión registrada en `state/batch-plan.json`.
 - Sin imports wildcard salvo los del preset emitido por stack-profile.
-- Stubs solo para métodos que el SUT realmente invoca según `dependency-graph.json`.
+- Stubs solo para métodos que el SUT realmente invoca según `dependency-graph.json` → skill [11-quality/06](../11-quality/06-test-doubles.md).
+
+## Contrato normativo
+
+Todo test emitido por este procedimiento DEBE pasar
+[test-quality-gate.md](test-quality-gate.md), que enforza los 14 checks
+derivados de [skills/11-quality/](../11-quality/README.md). Las violaciones
+se devuelven al `repair-agent` para resolución determinística vía
+[repair-rules/quality.rules](../../repair-rules/quality.rules) o, si no son
+reparables, el test se descarta sin compilar.

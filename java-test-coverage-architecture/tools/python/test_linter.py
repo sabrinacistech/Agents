@@ -8,6 +8,9 @@ Checks implemented:
   rejected when the method is not enumerated in the contract.
 * FreeBuilder guard: `new Interface()` and direct `Type_Builder` usage are blocked.
 * G5 (--stack-profile): JUnit/Mockito/Spring version compatibility enforced.
+* G6-quality (--quality-checks): enforces the 14 rules in test-quality-gate.md,
+  derived from skills/11-quality/ (AAA structure, naming, anti-patterns,
+  non-determinism, over-mocking, assert-free, eager tests, etc.).
 * Index supplement (--index): state/index/methods.json used as G2 fallback.
 * Context-pack cross-validation (--context-pack): SUT FQCN consistency check.
 
@@ -44,6 +47,59 @@ VAR_DECL_RE = re.compile(
 CALL_RE = re.compile(r"\b(?P<var>[a-zA-Z_]\w*)\.(?P<method>[a-zA-Z_]\w*)\s*\(")
 STATIC_CALL_RE = re.compile(r"\b(?P<type>[A-Z]\w*)\.(?P<method>[a-zA-Z_]\w*)\s*\(")
 MOCK_STATIC_RE = re.compile(r"\bmockStatic\s*\(")
+
+# ── G6-quality regexes (skills/11-quality/) ───────────────────────────────────
+# Method names annotated with @Test (capture the identifier).
+TEST_METHOD_NAME_RE = re.compile(
+    r"@Test\b(?:\s*\([^)]*\))?\s+(?:public\s+|private\s+|protected\s+)?"
+    r"(?:static\s+|final\s+)*(?:void|[\w<>,\s\[\]]+?)\s+([a-zA-Z_]\w*)\s*\(",
+    re.MULTILINE,
+)
+# Two accepted naming forms: shouldX_whenY  |  method_condition_expected.
+NAMING_OK_RE = re.compile(
+    r"^(?:should[A-Z]\w*_when[A-Z]\w*|[a-z]\w+_[a-z]\w+_[a-z]\w+)$"
+)
+THREAD_SLEEP_RE = re.compile(r"\bThread\.sleep\s*\(")
+NON_DETERMINISTIC_RE = re.compile(
+    r"\b(?:Math\.random|System\.currentTimeMillis|System\.nanoTime|"
+    r"LocalDate\.now|LocalDateTime\.now|Instant\.now|UUID\.randomUUID)\s*\("
+)
+AWAITILITY_NO_TIMEOUT_RE = re.compile(
+    r"\bAwait(?:ility)?\.\s*await\s*\(\s*\)(?!\s*\.\s*atMost\b)"
+)
+ASSERT_TRUE_TAUTOLOGY_RE = re.compile(r"\bassertTrue\s*\(\s*true\s*[,)]")
+ASSERT_FALSE_TAUTOLOGY_RE = re.compile(r"\bassertFalse\s*\(\s*false\s*[,)]")
+# Any real assert/verify call. Used to detect assert-free tests.
+ASSERT_OR_VERIFY_RE = re.compile(r"\b(?:assert\w+|verify)\s*\(")
+LOGIC_IN_TEST_RE = re.compile(r"\b(if|for|while|switch)\s*\(")
+WHEN_COMMENT_RE = re.compile(r"//\s*when\b", re.IGNORECASE)
+GIVEN_COMMENT_RE = re.compile(r"//\s*given\b", re.IGNORECASE)
+THEN_COMMENT_RE = re.compile(r"//\s*then\b", re.IGNORECASE)
+VERIFY_NO_MORE_RE = re.compile(r"\bverifyNoMoreInteractions\s*\(")
+# Static field that is NOT final (mutable static state in the test class).
+STATIC_MUTABLE_RE = re.compile(
+    r"^\s*(?:private|public|protected)?\s*static\s+"
+    r"(?!final\b)[\w<>,\s\[\]]+\s+\w+\s*[=;]",
+    re.MULTILINE,
+)
+# `mock(SUTType.class)` / `spy(SUTType.class)` — captured type checked against SUT.
+MOCK_OF_TYPE_RE = re.compile(r"\b(?:mock|spy)\s*\(\s*([A-Z]\w*)\s*\.\s*class\s*\)")
+# `@Mock SUTType`, `@Spy SUTType`, `@MockBean SUTType` — captured type vs SUT.
+MOCK_ANNOTATION_TYPE_RE = re.compile(
+    r"@(?:Mock|Spy)(?:Bean)?\b[^\n;]*?\s+([A-Z]\w*)\s+\w+\s*[;=]"
+)
+# Value object / primitive wrapper types that must never be mocked.
+NEVER_MOCK_TYPES: frozenset[str] = frozenset({
+    "String", "Integer", "Long", "Double", "Float", "Boolean", "Character",
+    "Short", "Byte", "BigDecimal", "BigInteger", "Optional",
+    "LocalDate", "LocalDateTime", "LocalTime", "Instant", "Duration",
+    "Period", "ZonedDateTime", "OffsetDateTime", "Date", "UUID",
+})
+# Marker comment that legitimises `verifyNoMoreInteractions` in negative scenarios.
+NEGATIVE_SCENARIO_MARKER_RE = re.compile(
+    r"//\s*(?:negative\s*scenario|no-more-interactions:\s*intentional)\b",
+    re.IGNORECASE,
+)
 
 ALLOWED_IMPLICIT = {
     "String", "Integer", "Long", "Double", "Float", "Boolean", "Object",
@@ -295,6 +351,231 @@ def check_context_pack(cp: dict, test_file: Path) -> list[dict]:
     return warnings
 
 
+# ── G6-quality checks (skills/11-quality/) ────────────────────────────────────
+
+def _extract_test_method_bodies(text: str) -> list[tuple[str, str]]:
+    """Return [(method_name, body_text), ...] for each `@Test` method.
+
+    Body is delimited by balanced braces starting after the opening `{`.
+    """
+    out: list[tuple[str, str]] = []
+    for m in TEST_METHOD_NAME_RE.finditer(text):
+        name = m.group(1)
+        # Find the first `{` after the match end (skip throws clause, etc.).
+        brace = text.find("{", m.end())
+        if brace == -1:
+            continue
+        depth = 1
+        i = brace + 1
+        n = len(text)
+        while i < n and depth > 0:
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            i += 1
+        body = text[brace + 1 : i - 1] if depth == 0 else text[brace + 1 :]
+        out.append((name, body))
+    return out
+
+
+def _resolve_sut_simple_name(
+    test_file: Path, context_pack: dict | None
+) -> str | None:
+    """Return the simple name of the SUT (e.g. `FooService`).
+
+    Prefers `context_pack.sut.fqcn`; falls back to stripping `Test` from the
+    test file stem.
+    """
+    if context_pack:
+        sut_raw = context_pack.get("sut") or context_pack.get("fqcn") or ""
+        sut_fqcn = sut_raw.get("fqcn") if isinstance(sut_raw, dict) else sut_raw
+        if sut_fqcn:
+            return str(sut_fqcn).rsplit(".", 1)[-1]
+    stem = test_file.stem
+    if stem.endswith("Test") and len(stem) > 4:
+        return stem[:-4]
+    if stem.endswith("Tests") and len(stem) > 5:
+        return stem[:-5]
+    return None
+
+
+def check_quality(
+    text: str, test_file: Path, context_pack: dict | None
+) -> list[dict]:
+    """Enforce the 14 rules from skills/07-generation/test-quality-gate.md."""
+    v: list[dict] = []
+    sut_simple = _resolve_sut_simple_name(test_file, context_pack)
+
+    # ── TQG_11_NON_DETERMINISTIC: Thread.sleep / Math.random / *.now() / UUID.random.
+    if THREAD_SLEEP_RE.search(text):
+        v.append({
+            "gate": "G6",
+            "kind": "TQG_11_NON_DETERMINISTIC",
+            "skill": "11-quality/11",
+            "reason": "Thread.sleep is forbidden — use Awaitility.await().atMost(...)",
+        })
+    for m in NON_DETERMINISTIC_RE.finditer(text):
+        v.append({
+            "gate": "G6",
+            "kind": "TQG_11_NON_DETERMINISTIC",
+            "skill": "11-quality/11",
+            "symbol": m.group(0).rstrip("("),
+            "reason": "Non-deterministic call — inject a Clock/Supplier or use a fixed value",
+        })
+    if AWAITILITY_NO_TIMEOUT_RE.search(text):
+        v.append({
+            "gate": "G6",
+            "kind": "TQG_11_NON_DETERMINISTIC",
+            "skill": "11-quality/11",
+            "reason": "Awaitility.await() without .atMost(...) timeout",
+        })
+
+    # ── TQG_12_TAUTOLOGY: assertTrue(true) / assertFalse(false).
+    for m in ASSERT_TRUE_TAUTOLOGY_RE.finditer(text):
+        v.append({
+            "gate": "G6",
+            "kind": "TQG_12_TAUTOLOGY",
+            "skill": "11-quality/12",
+            "reason": "assertTrue(true) is a tautology — assert the actual behaviour",
+        })
+    for m in ASSERT_FALSE_TAUTOLOGY_RE.finditer(text):
+        v.append({
+            "gate": "G6",
+            "kind": "TQG_12_TAUTOLOGY",
+            "skill": "11-quality/12",
+            "reason": "assertFalse(false) is a tautology — assert the actual behaviour",
+        })
+
+    # ── TQG_12_OVER_MOCK: mocking the SUT or value objects.
+    for m in MOCK_OF_TYPE_RE.finditer(text):
+        typ = m.group(1)
+        if sut_simple and typ == sut_simple:
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_12_OVER_MOCK",
+                "skill": "11-quality/12",
+                "symbol": typ,
+                "reason": f"SUT '{typ}' must not be mocked",
+            })
+        elif typ in NEVER_MOCK_TYPES:
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_12_OVER_MOCK",
+                "skill": "11-quality/12",
+                "symbol": typ,
+                "reason": f"Value object '{typ}' must not be mocked",
+            })
+    for m in MOCK_ANNOTATION_TYPE_RE.finditer(text):
+        typ = m.group(1)
+        if sut_simple and typ == sut_simple:
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_12_OVER_MOCK",
+                "skill": "11-quality/12",
+                "symbol": typ,
+                "reason": f"SUT '{typ}' must not be annotated @Mock/@Spy/@MockBean",
+            })
+        elif typ in NEVER_MOCK_TYPES:
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_12_OVER_MOCK",
+                "skill": "11-quality/12",
+                "symbol": typ,
+                "reason": f"Value object '{typ}' must not be annotated @Mock/@Spy",
+            })
+
+    # ── TQG_10_OVER_VERIFY: verifyNoMoreInteractions without negative marker.
+    if VERIFY_NO_MORE_RE.search(text) and not NEGATIVE_SCENARIO_MARKER_RE.search(text):
+        v.append({
+            "gate": "G6",
+            "kind": "TQG_10_OVER_VERIFY",
+            "skill": "11-quality/10",
+            "reason": (
+                "verifyNoMoreInteractions is brittle — add "
+                "`// negative scenario` marker comment if intentional"
+            ),
+        })
+
+    # ── TQG_10_STATIC_STATE: non-final static field in the test class.
+    for m in STATIC_MUTABLE_RE.finditer(text):
+        v.append({
+            "gate": "G6",
+            "kind": "TQG_10_STATIC_STATE",
+            "skill": "11-quality/10",
+            "reason": "Mutable static field in test class — leaks state between tests",
+        })
+
+    # ── Per-method checks: naming, AAA, logic-in-test, eager test, assert-free.
+    method_bodies = _extract_test_method_bodies(text)
+    for name, body in method_bodies:
+        # TQG_03_NAMING
+        if not NAMING_OK_RE.match(name):
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_03_NAMING",
+                "skill": "11-quality/03",
+                "method": name,
+                "reason": (
+                    f"'{name}' does not match should*_when* or "
+                    "snake_case spec form (method_condition_expected)"
+                ),
+            })
+
+        # TQG_02_NO_AAA: body must contain // given, // when, // then.
+        has_given = bool(GIVEN_COMMENT_RE.search(body))
+        has_when = bool(WHEN_COMMENT_RE.search(body))
+        has_then = bool(THEN_COMMENT_RE.search(body))
+        if not (has_given and has_when and has_then):
+            missing = [
+                lbl for lbl, present in (
+                    ("given", has_given),
+                    ("when", has_when),
+                    ("then", has_then),
+                ) if not present
+            ]
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_02_NO_AAA",
+                "skill": "11-quality/02",
+                "method": name,
+                "reason": f"AAA separators missing: // {' // '.join(missing)}",
+            })
+
+        # TQG_09_LOGIC_IN_TEST: control flow inside test body.
+        if LOGIC_IN_TEST_RE.search(body):
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_09_LOGIC_IN_TEST",
+                "skill": "11-quality/09",
+                "method": name,
+                "reason": "Control flow (if/for/while/switch) inside test body",
+            })
+
+        # TQG_11_EAGER_TEST: more than one `// when` separator.
+        if len(WHEN_COMMENT_RE.findall(body)) > 1:
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_11_EAGER_TEST",
+                "skill": "11-quality/11",
+                "method": name,
+                "reason": "Multiple `// when` separators — split into multiple tests",
+            })
+
+        # TQG_12_ASSERT_FREE: no real assert*/verify call in body.
+        if not ASSERT_OR_VERIFY_RE.search(body):
+            v.append({
+                "gate": "G6",
+                "kind": "TQG_12_ASSERT_FREE",
+                "skill": "11-quality/12",
+                "method": name,
+                "reason": "Test has no assert*/verify call — assert observable behaviour",
+            })
+
+    return v
+
+
 # ── Core lint function ────────────────────────────────────────────────────────
 
 def lint(
@@ -304,6 +585,7 @@ def lint(
     stack_profile: dict | None = None,
     index_dir: Path | None = None,
     context_pack: dict | None = None,
+    quality_checks: bool = False,
 ) -> dict:
     text = test_file.read_text(encoding="utf-8", errors="ignore")
     classes = {c["fqcn"]: c for c in whitelist.get("classes", [])}
@@ -369,6 +651,10 @@ def lint(
     # ── Context-pack cross-validation ─────────────────────────────────────────
     if context_pack:
         violations.extend(check_context_pack(context_pack, test_file))
+
+    # ── G6-quality (skills/11-quality/) ───────────────────────────────────────
+    if quality_checks:
+        violations.extend(check_quality(text, test_file, context_pack))
 
     # ── G2-lite: FreeBuilder guard ────────────────────────────────────────────
     for m in DIRECT_GENERATED_BUILDER_RE.finditer(text):
@@ -557,6 +843,16 @@ def main() -> int:
             "linted test file corresponds to the expected SUT."
         ),
     )
+    ap.add_argument(
+        "--quality-checks",
+        action="store_true",
+        help=(
+            "Enable G6-quality checks (skills/11-quality/): AAA structure, "
+            "naming, anti-patterns (mystery-guest, coupled/brittle, eager, "
+            "over-mocking, assert-free), non-determinism. See "
+            "skills/07-generation/test-quality-gate.md for the rule catalog."
+        ),
+    )
     args = ap.parse_args()
 
     if not args.test_file and not args.batch:
@@ -610,6 +906,7 @@ def main() -> int:
             stack_profile=stack_profile,
             index_dir=index_dir,
             context_pack=context_pack,
+            quality_checks=args.quality_checks,
         )
 
     if args.batch:

@@ -10,6 +10,7 @@ reglas por dominio.
 | `spring.rules`     | Contexto Spring, bean wiring, slices.                    |
 | `junit.rules`      | Runner/Extension, `@Test` mal anotado, lifecycle.        |
 | `builders.rules`   | FreeBuilder / Lombok / generated builders.               |
+| `quality.rules`    | Violaciones G6-quality del linter (`TQG_*`) → reparación o escalado al LLM con la cita del skill `11-quality/NN`. |
 
 ## Formato
 

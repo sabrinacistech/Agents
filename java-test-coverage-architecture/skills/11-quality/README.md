@@ -1,12 +1,14 @@
-# Java Unit Testing Skills
+# 11-quality — Java Test Quality Standards
 
-Skills de testing unitario puro para proyectos Java.
-Sin tests de integración — todo resuelto con mocks y JUnit 5.
+Estándares normativos de calidad para todo test generado por el pipeline.
+Cada archivo define una regla auditable; el conjunto es el contrato que
+[test-quality-gate.md](../07-generation/test-quality-gate.md) enforza y
+[test_linter.py](../../tools/python/test_linter.py) valida pre-compile.
 
 ## Estructura
 
 ```
-java-testing-skills/
+skills/11-quality/
 ├── README.md                                   ← este archivo
 │
 ├── Fundamentos
@@ -51,3 +53,13 @@ java-testing-skills/
 
 > Testear comportamiento observable, no implementación interna.
 > Un test que falla al refactorizar sin cambiar el contrato es un test mal escrito.
+
+## Integración con el pipeline
+
+| Consumidor | Cómo aplica los skills |
+|---|---|
+| [test-intent-agent](../../agents/test-intent-agent.md) | Un concepto por test (11), parametrización (07), naming desde el escenario (03). |
+| [test-body-agent](../../agents/test-body-agent.md) | Estructura AAA (02), naming (03), test doubles (06), anti-mystery-guest (09), anti-overmocking (12). |
+| [test-quality-gate](../07-generation/test-quality-gate.md) | Mapea cada regla del gate a su skill `11-quality/NN` correspondiente. |
+| [test_linter.py](../../tools/python/test_linter.py) | Checks G6-quality estáticos: naming regex, `Thread.sleep`, `assertTrue(true)`, mock del SUT. |
+| [repair-rules/quality.rules](../../repair-rules/quality.rules) | Reparaciones determinísticas de violaciones detectadas por el linter. |
