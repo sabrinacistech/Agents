@@ -40,6 +40,10 @@ from common import atomic_write_json, load_json, sha256_file
 
 VERSION = 1  # bump on schema changes → triggers full re-index
 
+# Relative path from execution_folder/state/index/ to the static schema definition.
+# Convention: execution folders live at the same repo-root level as java-test-coverage-architecture/.
+_INDEX_SCHEMA_REF = "../../../java-test-coverage-architecture/state/_schemas/semantic-index.schema.json"
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -373,6 +377,7 @@ def main() -> int:
     classes_path = index_dir / "classes.json"
     if args.full or not _index_is_fresh(classes_path, fingerprints):
         data = build_classes_index(contracts_dir)
+        data["$schema"] = _INDEX_SCHEMA_REF + "#/definitions/classesFile"
         data["_fingerprints"] = fingerprints
         atomic_write_json(classes_path, data)
         print(f"[OK] classes.json  — {data['count']} FQCNs")
@@ -383,6 +388,7 @@ def main() -> int:
     methods_path = index_dir / "methods.json"
     if args.full or not _index_is_fresh(methods_path, fingerprints):
         data = build_methods_index(contracts_dir)
+        data["$schema"] = _INDEX_SCHEMA_REF + "#/definitions/methodsFile"
         data["_fingerprints"] = fingerprints
         atomic_write_json(methods_path, data)
         print(f"[OK] methods.json  — {data['count']} method entries")
@@ -394,6 +400,7 @@ def main() -> int:
     wl_fp = {whitelist_path.name: sha256_file(whitelist_path)} if whitelist_path.exists() else {}
     if args.full or not _index_is_fresh(imports_path, wl_fp):
         data = build_imports_index(whitelist_path)
+        data["$schema"] = _INDEX_SCHEMA_REF + "#/definitions/importsFile"
         data["_fingerprints"] = wl_fp
         atomic_write_json(imports_path, data)
         print(f"[OK] imports.json  — {data['packageCount']} packages, {data['classCount']} classes")
@@ -405,6 +412,7 @@ def main() -> int:
     dg_fp = {dep_graph_path.name: sha256_file(dep_graph_path)} if dep_graph_path.exists() else {}
     if args.full or not _index_is_fresh(dependencies_path, dg_fp):
         data = build_dependencies_index(dep_graph_path)
+        data["$schema"] = _INDEX_SCHEMA_REF + "#/definitions/dependenciesFile"
         data["_fingerprints"] = dg_fp
         atomic_write_json(dependencies_path, data)
         print(f"[OK] dependencies.json — {data['count']} classes")
@@ -418,6 +426,7 @@ def main() -> int:
         ann_fp[classification_path.name] = sha256_file(classification_path)
     if args.full or not _index_is_fresh(annotations_path, ann_fp):
         data = build_annotations_index(contracts_dir, classification_path)
+        data["$schema"] = _INDEX_SCHEMA_REF + "#/definitions/annotationsFile"
         data["_fingerprints"] = ann_fp
         atomic_write_json(annotations_path, data)
         print(f"[OK] annotations.json — {data['classCount']} classes, {data['methodCount']} methods")

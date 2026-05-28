@@ -16,7 +16,7 @@ source "${AGENTS_DIR}/lib/utils.sh"
 # ── Internal constants ────────────────────────────────────────────────────────
 readonly VERSION="1.0.0"
 readonly TOOLS_DIR="${AGENTS_DIR}/tools"
-readonly DEFAULT_OUTPUT_DIR="${AGENTS_DIR}/outputs"
+readonly REPO_ROOT="${AGENTS_DIR}/.."
 
 # ── Usage / help ──────────────────────────────────────────────────────────────
 usage() {
@@ -34,8 +34,8 @@ ${BOLD}REQUIRED${RESET}
                          The project files are ${BOLD}never${RESET} modified.
 
 ${BOLD}OPTIONS${RESET}
-  -o, --output <path>    Override the output directory.
-                         Default: agents/outputs/<type>/<timestamp>/
+  -o, --output <path>    Override the execution output directory.
+                         Default: java-test-coverage-architecture_execution_<project>_<YYYYMMDD>/
       --dry-run          Detect project type and print the runner that would
                          be used, then exit without running anything.
   -v, --version          Print version and exit.
@@ -66,7 +66,7 @@ EOF
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 TARGET_PATH=""
-OUTPUT_PATH="${DEFAULT_OUTPUT_DIR}"
+OUTPUT_PATH=""   # computed from project name + date after --target is known
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
@@ -109,8 +109,14 @@ fi
 require_dir "${TARGET_PATH}" "--target" || exit 1
 TARGET_PATH="$(abspath "${TARGET_PATH}")"
 
-# ── Ensure output root exists ─────────────────────────────────────────────────
+# ── Compute execution folder (project name + date) if not overridden ──────────
+if [[ -z "${OUTPUT_PATH}" ]]; then
+  PROJECT_NAME="$(basename "${TARGET_PATH}")"
+  TODAY="$(date +%Y%m%d)"
+  OUTPUT_PATH="${REPO_ROOT}/java-test-coverage-architecture_execution_${PROJECT_NAME}_${TODAY}"
+fi
 mkdir -p "${OUTPUT_PATH}"
+OUTPUT_PATH="$(abspath "${OUTPUT_PATH}")"
 
 # ── Project type detection ────────────────────────────────────────────────────
 detect_project_type() {

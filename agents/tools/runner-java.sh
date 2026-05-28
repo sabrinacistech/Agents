@@ -31,10 +31,10 @@ source "${AGENTS_DIR}/lib/utils.sh"
 ARCH_DIR="${AGENTS_DIR}/../java-test-coverage-architecture"
 ARCH_DIR="$(cd "${ARCH_DIR}" && pwd)"          # absolute, no ..
 TOOLS_PYTHON="${ARCH_DIR}/tools/python"
-STATE_DIR="${ARCH_DIR}/state"
+STATE_DIR="${OUTPUT_PATH}/state"
 
 # Per-run archive directory (for logs + a snapshot of the state produced)
-RUN_DIR="${OUTPUT_PATH}/java/$(timestamp)"
+RUN_DIR="${OUTPUT_PATH}/runs/$(timestamp)"
 mkdir -p "${RUN_DIR}"
 
 log_section "Java/Maven Coverage Runner"

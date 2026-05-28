@@ -8,7 +8,10 @@ CLI
 ---
     python tools/python/repair_rules_compiler.py \
         --rules-dir repair-rules \
-        --out state/_summaries/compiled-rules.json
+        --out <execution_folder>/state/_summaries/compiled-rules.json
+
+Source rules are read from java-test-coverage-architecture/repair-rules/ (static definitions).
+Output goes to the execution folder — never back into the architecture directory.
 
 If `repair-rules/` does not exist:
     - default: WARN and emit an empty compiled-rules.json (rc=0)
@@ -157,8 +160,8 @@ def main() -> int:
     )
     ap.add_argument(
         "--out",
-        default="state/_summaries/compiled-rules.json",
-        help="Destination JSON (default: state/_summaries/compiled-rules.json).",
+        required=True,
+        help="Destination JSON inside the execution folder (e.g. <execution_folder>/state/_summaries/compiled-rules.json).",
     )
     ap.add_argument(
         "--strict",

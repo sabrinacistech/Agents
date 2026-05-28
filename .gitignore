@@ -13,3 +13,6 @@
 .idea/modules.xml
 .idea/vcs.xml
 Agents.iml
+
+# Execution folders — generated per project+date, never committed
+/java-test-coverage-architecture_execution_*/
