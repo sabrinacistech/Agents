@@ -80,6 +80,16 @@
       "type": "array",
       "description": "Truncated field names (e.g. [\"imp\"]) when budget enforcement clipped the pack.",
       "items": { "type": "string" }
+    },
+    "fm": {
+      "type": "array",
+      "description": "P3.d: failure-memory projection. Each row is the positional tuple [hash, errorCode, symbolFQN, fixId, attempts, lastResult, lastSeenCycle?].",
+      "maxItems": 4,
+      "items": {
+        "type": "array",
+        "minItems": 6,
+        "maxItems": 7
+      }
     }
   }
 }

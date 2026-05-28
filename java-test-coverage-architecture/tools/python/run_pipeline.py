@@ -307,16 +307,24 @@ def main() -> int:
         ),
     )
     ap.add_argument(
+        "--no-compact-packs",
+        action="store_true",
+        help=(
+            "Disable the default --compact pass on context_pack_builder.py "
+            "(Step 16). With compact packs enabled (default), the LLM-facing "
+            "minified pack is written under state/context-packs-compact/ and "
+            "state/_summaries/llm-budget.json is populated for every SUT."
+        ),
+    )
+    ap.add_argument(
         "--sut",
         default=None,
         metavar="FQCN",
         help=(
-            "Optional: restrict context-pack building (Step 16) to a single FQCN. "
-            "Propagated as --sut to context_pack_builder.py. "
-            "coverage_planner.py does NOT currently filter by SUT — planning still runs "
-            "across the full plan and a [WARN] is emitted. "
-            "bytecode_scanner.py does not yet expose a --fqcn-filter; a [WARN] is logged "
-            "if --sut is supplied alongside --module."
+            "Restrict Phase 0 to a single FQCN end to end (P3.a): propagated "
+            "as --fqcn to bytecode_scanner, --sut to coverage_planner, and "
+            "--sut to context_pack_builder. Symbol contracts, batch plan and "
+            "context packs are all scoped to this class only."
         ),
     )
     args = ap.parse_args()
@@ -407,19 +415,16 @@ def main() -> int:
 
     # ── Step 6: Bytecode scanner → symbol-contracts/<fqcn>.json ─────────────
     if "bytecode" not in skip and args.module:
-        if args.sut:
-            # bytecode_scanner.py does not yet expose --fqcn-filter.
-            # TODO: add --fqcn-filter to bytecode_scanner.py to narrow the scan.
-            print(
-                "[WARN] --sut supplied but bytecode_scanner has no --fqcn-filter; "
-                "scan still uses --include regex only",
-                file=sys.stderr,
-            )
-        step("bytecode", [
+        bc_args = [
             HERE / "bytecode_scanner.py",
             "--repo", args.repo, "--out", args.out,
             "--module", args.module, "--include", args.include_fqcn,
-        ])
+        ]
+        if args.sut:
+            # P3.a: propagate --sut as an exact FQCN whitelist so the scanner
+            # only emits the contracts the user actually wants.
+            bc_args += ["--fqcn", args.sut]
+        step("bytecode", bc_args)
 
     # ── Step 7: Source symbol enricher ───────────────────────────────────────
     if "source" not in skip:
@@ -467,12 +472,10 @@ def main() -> int:
             "--mode", args.coverage_mode,
         ]
         if args.sut:
-            # coverage_planner.py does not currently accept --sut; planning
-            # still runs across the full plan. context_pack_builder filters.
-            print(
-                "[WARN] --sut filters context only; planning still full",
-                file=sys.stderr,
-            )
+            # P3.a: planning honours --sut end to end (no more "context only"
+            # caveat). The batch-plan.json now contains targets for this FQCN
+            # only.
+            plan_args += ["--sut", args.sut]
         step("planning", plan_args)
 
     # ── Step 14 [Phase 3]: Incremental map writer ─────────────────────────────
@@ -492,8 +495,13 @@ def main() -> int:
         step("validate", [HERE / "state_validator.py", "--state", args.out])
 
     # ── Step 16: Context pack builder → state/context-packs/<safe_fqcn>.json ─
+    # P1.a: --compact is the default. The LLM-facing pack is the minified one
+    # under state/context-packs-compact/. The verbose pack is still written for
+    # human inspection; opt out with --no-compact-packs when debugging.
     if "context" not in skip:
         ctx_args = [HERE / "context_pack_builder.py", "--out", args.out]
+        if not args.no_compact_packs:
+            ctx_args.append("--compact")
         if args.sut:
             ctx_args += ["--sut", args.sut]
         step("context", ctx_args)

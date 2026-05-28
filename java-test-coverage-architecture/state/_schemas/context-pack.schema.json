@@ -281,6 +281,27 @@
         ]
       },
       "minItems": 5
+    },
+    "failureMemory": {
+      "type": "array",
+      "description": "P3.d: top-N most recent FAILED entries from state/failure-memory.json scoped to this SUT (N=2). Carried so the repair-agent honours G7 without re-reading the full memory file.",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["hash", "errorCode", "symbolFQN", "fixId", "lastResult"],
+        "additionalProperties": false,
+        "properties": {
+          "hash":           { "type": "string" },
+          "errorCode":      { "type": "string" },
+          "symbolFQN":      { "type": "string" },
+          "fixId":          { "type": "string" },
+          "attempts":       { "type": "integer" },
+          "lastResult":     { "enum": ["FAILED", "SUCCESS"] },
+          "firstSeenCycle": { "type": "integer" },
+          "lastSeenCycle":  { "type": "integer" },
+          "testCaseId":     { "type": "string" }
+        }
+      }
     }
   }
 }

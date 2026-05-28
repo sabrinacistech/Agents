@@ -48,7 +48,13 @@
     Scoring mode: coverage | branch-coverage | mutation-hardening (default: coverage).
 
 .PARAMETER Compact
-    Also write minified compact packs to state/context-packs-compact/.
+    DEPRECATED: compact context-packs are now produced by the pipeline by
+    default (P1.a). Kept as a no-op for backwards compatibility.
+
+.PARAMETER NoCompactPacks
+    Disable the default compact-pack pass on step 16 (debug only). When set,
+    only the verbose state/context-packs/ files are written and no
+    llm-budget.json is produced.
 
 .PARAMETER ContinueOnError
     Continue pipeline even if a step fails (legacy mode).
@@ -84,6 +90,7 @@ param(
     [ValidateSet("coverage","branch-coverage","mutation-hardening")]
     [string]$CoverageMode = "coverage",
     [switch]$Compact,
+    [switch]$NoCompactPacks,
     [switch]$ContinueOnError
 )
 
@@ -309,6 +316,14 @@ if ($ContinueOnError) {
     $PipelineArgs += @("--continue-on-error")
 }
 
+if ($NoCompactPacks) {
+    $PipelineArgs += @("--no-compact-packs")
+}
+
+if ($Compact) {
+    Write-Host "  [INFO] -Compact is deprecated; compact packs are produced by default." -ForegroundColor DarkYellow
+}
+
 Write-Host "  $PythonExe $($PipelineArgs -join ' ')"
 
 # ── 7. Run the pipeline ───────────────────────────────────────────────────────
@@ -324,20 +339,10 @@ $PipelineExit = $LASTEXITCODE
 
 $elapsedSec = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
 
-# ── 8. Optional compact pass ─────────────────────────────────────────────────
-if ($Compact -and ($PipelineExit -eq 0)) {
-    Write-Host ""
-    Write-Host "[5b] Building compact context-packs..." -ForegroundColor Yellow
-    $CtxScript = Join-Path $ToolsDir "context_pack_builder.py"
-    $CompactArgs = @($CtxScript, "--out", $StateDirNorm, "--compact")
-    if ($Sut -ne "") {
-        $CompactArgs += @("--sut", $Sut)
-    }
-    & $PythonExe @CompactArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "[WARN] Compact pack generation failed (non-critical)."
-    }
-}
+# ── 8. (Removed) Compact pass is now part of the pipeline by default ─────────
+# P1.b: the previous opt-in second pass over context_pack_builder.py was
+# redundant — run_pipeline.py Step 16 now emits compact packs and the
+# per-SUT llm-budget.json by default.
 
 # ── 9. Results summary ────────────────────────────────────────────────────────
 Write-Host ""

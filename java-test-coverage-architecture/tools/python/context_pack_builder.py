@@ -33,6 +33,11 @@ SCHEMA_NAME = "context-pack"
 DEFAULT_MAX_IMPORTS = 40
 TOKENS_PER_BYTE = 0.25  # rough estimate: ~4 bytes per token for JSON
 
+# P3.d: only carry this many recent FAILED entries from failure-memory.json
+# into each per-SUT pack so the repair-agent budget stays constant cycle over
+# cycle. The repair-agent never sees the full state/failure-memory.json file.
+FAILURE_MEMORY_MAX_PER_SUT = 2
+
 # Planner-only fields excluded from compact packs (P2.2).
 _COMPACT_CLASSIFICATION_DROP = {
     "risk", "score", "reasons", "tags", "loc",
@@ -89,6 +94,60 @@ FORBIDDEN_ACTIONS = [
 def safe_fqcn(fqcn: str) -> str:
     """Convert FQCN to a filesystem-safe filename stem."""
     return re.sub(r"[^A-Za-z0-9_.\-]", "_", fqcn)
+
+
+def project_failure_memory(failure_memory: dict | None, sut_fqcn: str) -> list[dict]:
+    """P3.d: select up to FAILURE_MEMORY_MAX_PER_SUT entries from
+    state/failure-memory.json that are scoped to this SUT.
+
+    Selection rules:
+      - keep entries whose symbolFQN starts with ``sut_fqcn`` (e.g. the FQCN
+        itself or a nested method/field reference);
+      - prefer ``lastResult == "FAILED"`` (these are the ones the repair-agent
+        must avoid retrying); SUCCESS entries are filtered out;
+      - sort by ``lastSeenCycle`` descending so older entries fall off first;
+      - cap to ``FAILURE_MEMORY_MAX_PER_SUT`` (default 2).
+    """
+    if not failure_memory:
+        return []
+    entries = failure_memory.get("entries", []) if isinstance(failure_memory, dict) else []
+    if not isinstance(entries, list):
+        return []
+
+    matched: list[dict] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("lastResult", "")).upper() != "FAILED":
+            continue
+        symbol = str(entry.get("symbolFQN", ""))
+        if not (symbol == sut_fqcn or symbol.startswith(sut_fqcn + ".") or symbol.startswith(sut_fqcn + "#")):
+            continue
+        matched.append(entry)
+
+    matched.sort(key=lambda e: int(e.get("lastSeenCycle") or 0), reverse=True)
+
+    projected: list[dict] = []
+    for entry in matched[:FAILURE_MEMORY_MAX_PER_SUT]:
+        row = {
+            "hash": str(entry.get("hash", "")),
+            "errorCode": str(entry.get("errorCode", "")),
+            "symbolFQN": str(entry.get("symbolFQN", "")),
+            "fixId": str(entry.get("fixId", "")),
+            "lastResult": "FAILED",
+        }
+        attempts = entry.get("attempts")
+        if isinstance(attempts, int):
+            row["attempts"] = attempts
+        for k in ("firstSeenCycle", "lastSeenCycle"):
+            v = entry.get(k)
+            if isinstance(v, int):
+                row[k] = v
+        tcid = entry.get("testCaseId")
+        if isinstance(tcid, str) and tcid:
+            row["testCaseId"] = tcid
+        projected.append(row)
+    return projected
 
 
 def load_optional(path: Path) -> Any | None:
@@ -451,6 +510,7 @@ def build_pack(
     coverage_targets: dict | None,
     import_whitelist: dict | None,
     symbol_contracts_dir: Path,
+    failure_memory: dict | None = None,
 ) -> dict:
     """Assemble the minimal context-pack for one SUT."""
     stack, blocked, block_reason = extract_stack(stack_profile)
@@ -493,6 +553,10 @@ def build_pack(
 
     if spring_strategy:
         pack["springStrategy"] = spring_strategy
+
+    fm_rows = project_failure_memory(failure_memory, fqcn)
+    if fm_rows:
+        pack["failureMemory"] = fm_rows
 
     return pack
 
@@ -650,6 +714,25 @@ def build_compact_pack(pack: dict, max_imports: int) -> tuple[dict, bool]:
     if truncated:
         compact["tr"] = ["imp"]
 
+    fm_rows = pack.get("failureMemory") or []
+    if fm_rows:
+        # Positional row: [hash, errorCode, symbolFQN, fixId, attempts, lastResult, lastSeenCycle?]
+        compact_fm: list[list] = []
+        for row in fm_rows:
+            tup = [
+                row.get("hash", ""),
+                row.get("errorCode", ""),
+                row.get("symbolFQN", ""),
+                row.get("fixId", ""),
+                int(row.get("attempts") or 0),
+                row.get("lastResult", "FAILED"),
+            ]
+            lsc = row.get("lastSeenCycle")
+            if isinstance(lsc, int):
+                tup.append(lsc)
+            compact_fm.append(tup)
+        compact["fm"] = compact_fm
+
     return compact, truncated
 
 
@@ -673,16 +756,54 @@ def _emit_budget(
     compact_pack_bytes: int,
     truncated_fields: list[str],
 ) -> None:
-    """Write state/_summaries/llm-budget.json atomically (P2.5)."""
-    budget = {
-        "schemaVersion": 1,
+    """Accumulate a per-SUT budget entry in state/_summaries/llm-budget.json (P1.c).
+
+    The file is rewritten atomically with the merged entries[] list each call.
+    Older entries for the same `sut` are replaced so a re-run does not duplicate.
+    A run only resets the file when the first SUT of the run is written (the
+    caller passes `truncated_fields=[]` for that bootstrap call via the
+    pack-builder loop), keeping per-SUT history within a single Phase 0 run.
+    """
+    budget_path = state_dir / "_summaries" / "llm-budget.json"
+    schema_version = 2
+    if budget_path.exists():
+        try:
+            current = load_json(budget_path)
+        except Exception:
+            current = {}
+    else:
+        current = {}
+
+    entries: list[dict] = (
+        current.get("entries", [])
+        if isinstance(current.get("entries"), list)
+        else []
+    )
+    entries = [e for e in entries if e.get("sut") != sut]
+
+    entry = {
         "sut": sut,
         "contextPackBytes": context_pack_bytes,
         "compactPackBytes": compact_pack_bytes,
         "estimatedTokensIn": int(compact_pack_bytes * TOKENS_PER_BYTE),
         "truncatedFields": truncated_fields,
     }
-    atomic_write_json(state_dir / "_summaries" / "llm-budget.json", budget)
+    entries.append(entry)
+
+    total_compact = sum(e.get("compactPackBytes", 0) for e in entries)
+    total_tokens = sum(e.get("estimatedTokensIn", 0) for e in entries)
+
+    payload = {
+        "schemaVersion": schema_version,
+        "tokensPerByte": TOKENS_PER_BYTE,
+        "totals": {
+            "suts": len(entries),
+            "compactPackBytes": total_compact,
+            "estimatedTokensIn": total_tokens,
+        },
+        "entries": entries,
+    }
+    atomic_write_json(budget_path, payload)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -762,6 +883,7 @@ def main() -> int:
     fixture_catalog = load_optional(state_dir / "fixture-catalog.json")
     coverage_targets = load_optional(state_dir / "coverage-targets.json")
     import_whitelist = load_optional(state_dir / "import-whitelist.json")
+    failure_memory = load_optional(state_dir / "failure-memory.json")
 
     if not stack_profile:
         print("[WARN] stack-profile.json missing — context packs will be marked blocked", file=sys.stderr)
@@ -769,6 +891,17 @@ def main() -> int:
     # ── Build and write one pack per SUT ─────────────────────────────────────
     errors = 0
     packs_dir.mkdir(parents=True, exist_ok=True)
+
+    # P1.c: reset llm-budget.json at the start of a full-run (no --sut filter)
+    # so per-SUT entries reflect the current run only. When --sut is supplied
+    # we keep prior entries and replace just that SUT's row.
+    if args.compact and not args.dry_run and not args.sut:
+        budget_path = state_dir / "_summaries" / "llm-budget.json"
+        if budget_path.exists():
+            try:
+                budget_path.unlink()
+            except OSError:
+                pass
 
     for fqcn in suts:
         try:
@@ -783,6 +916,7 @@ def main() -> int:
                 coverage_targets=coverage_targets,
                 import_whitelist=import_whitelist,
                 symbol_contracts_dir=contracts_dir,
+                failure_memory=failure_memory,
             )
         except Exception as exc:
             print(f"[ERROR] Building pack for {fqcn}: {exc}", file=sys.stderr)
@@ -814,18 +948,18 @@ def main() -> int:
                 compact_bytes = _atomic_write_minified(compact_path, compact)
                 print(f"[OK] compact {fqcn} → {compact_path.relative_to(state_dir.parent)}")
 
-                if truncated:
-                    try:
-                        context_pack_bytes = out_path.stat().st_size
-                    except OSError:
-                        context_pack_bytes = 0
-                    _emit_budget(
-                        state_dir=state_dir,
-                        sut=fqcn,
-                        context_pack_bytes=context_pack_bytes,
-                        compact_pack_bytes=compact_bytes,
-                        truncated_fields=["imp"],
-                    )
+                # P1.c: emit budget unconditionally so totals are auditable.
+                try:
+                    context_pack_bytes = out_path.stat().st_size
+                except OSError:
+                    context_pack_bytes = 0
+                _emit_budget(
+                    state_dir=state_dir,
+                    sut=fqcn,
+                    context_pack_bytes=context_pack_bytes,
+                    compact_pack_bytes=compact_bytes,
+                    truncated_fields=["imp"] if truncated else [],
+                )
 
     if errors:
         print(f"\n[FAIL] {errors} pack(s) failed to build.", file=sys.stderr)

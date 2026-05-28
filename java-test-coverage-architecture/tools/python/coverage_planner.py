@@ -150,8 +150,14 @@ def plan(
     state_dir: Path,
     batch_size: int = 10,
     mode: str = "coverage",
+    sut_filter: list[str] | None = None,
 ) -> dict:
-    """Compute and return the batch-plan dict."""
+    """Compute and return the batch-plan dict.
+
+    When ``sut_filter`` is supplied, only targets whose ``sut`` field matches
+    one of the listed FQCNs are scored — keeps batch-plan.json scoped to the
+    user-requested subset when --sut is propagated from run_pipeline.
+    """
 
     cov_targets     = _safe_load(state_dir / "coverage-targets.json",     {"targets": []})
     classification  = _safe_load(state_dir / "classification-index.json", {"classes": []})
@@ -167,6 +173,11 @@ def plan(
     fixture_ids   = _build_fixture_ids_map(fixture_catalog)
 
     targets: list[dict] = cov_targets.get("targets", [])
+    if sut_filter:
+        allow = set(sut_filter)
+        before = len(targets)
+        targets = [t for t in targets if t.get("sut") in allow]
+        print(f"[INFO] --sut filter active: {len(targets)}/{before} targets retained for {sorted(allow)}")
     if not targets:
         print("[INFO] no coverage targets; batch-plan will be empty")
 
@@ -307,13 +318,29 @@ def main() -> int:
         choices=["coverage", "branch-coverage", "mutation-hardening"],
         help="Coverage mode (default: coverage)",
     )
+    ap.add_argument(
+        "--sut",
+        action="append",
+        default=None,
+        metavar="FQCN",
+        help=(
+            "P3.a: restrict planning to one or more SUT FQCNs. Repeat for "
+            "multiple. Targets whose `sut` field is not in this list are "
+            "dropped before scoring."
+        ),
+    )
     args = ap.parse_args()
 
     state_dir = Path(args.out).resolve()
 
     _update_schema(SCHEMAS_DIR / "batch-plan.schema.json")
 
-    result = plan(state_dir, batch_size=args.batch_size, mode=args.mode)
+    result = plan(
+        state_dir,
+        batch_size=args.batch_size,
+        mode=args.mode,
+        sut_filter=args.sut,
+    )
     validate("batch-plan", result)
     atomic_write_json(state_dir / "batch-plan.json", result)
 

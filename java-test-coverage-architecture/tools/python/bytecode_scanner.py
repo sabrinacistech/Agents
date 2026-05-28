@@ -206,6 +206,17 @@ def main() -> int:
         default=".*",
         help="Regex to filter FQCNs (e.g. '^com\\.acme\\.')",
     )
+    ap.add_argument(
+        "--fqcn",
+        action="append",
+        default=None,
+        metavar="FQCN",
+        help=(
+            "P3.a: restrict the scan to one or more exact FQCNs. May be "
+            "supplied multiple times. Intersects with --include (a class is "
+            "scanned only if it matches the regex AND appears in this set)."
+        ),
+    )
     args = ap.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -223,6 +234,7 @@ def main() -> int:
 
     javap = find_tool("javap")
     include = re.compile(args.include)
+    fqcn_whitelist: set[str] | None = set(args.fqcn) if args.fqcn else None
     out_dir = state_dir / "symbol-contracts"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -238,6 +250,8 @@ def main() -> int:
             if not contract:
                 continue
             if not include.search(contract["fqcn"]):
+                continue
+            if fqcn_whitelist is not None and contract["fqcn"] not in fqcn_whitelist:
                 continue
             if contract["fqcn"] in seen_fqcns:
                 # Same class compiled into multiple modules — keep the first.
