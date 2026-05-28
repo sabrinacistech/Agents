@@ -68,6 +68,7 @@ _WATCH_REQUIRED_DIRS: tuple[str, ...] = (
 _SPECIAL_SCHEMAS: frozenset[str] = frozenset({
     "symbol-contract",  # → valida state/symbol-contracts/*.json
     "context-pack",     # → valida state/context-packs/*.json
+    "semantic-index",   # → valida state/index/{classes,methods,imports,dependencies,annotations}.json
 })
 
 # ---------------------------------------------------------------------------
@@ -334,6 +335,106 @@ def validate_context_packs(
 
 
 # ---------------------------------------------------------------------------
+# Validación especial: semantic-index.schema.json → state/index/
+# ---------------------------------------------------------------------------
+
+# Mapping: filename in state/index/ → definition name inside semantic-index.schema.json
+_SEMANTIC_INDEX_FILES: dict[str, str] = {
+    "classes.json":      "classesFile",
+    "methods.json":      "methodsFile",
+    "imports.json":      "importsFile",
+    "dependencies.json": "dependenciesFile",
+    "annotations.json":  "annotationsFile",
+}
+
+
+def validate_semantic_index(
+    schemas_dir: Path,
+    state_dir: Path,
+    jsonschema,
+) -> int:
+    """Valida state/index/{classes,methods,imports,dependencies,annotations}.json.
+
+    Usa las definitions de semantic-index.schema.json porque ese schema no
+    corresponde a un único state/<name>.json sino a un directorio con 5 archivos
+    escritos por semantic_index_writer.py.  Los 5 archivos son requeridos.
+    """
+    schema_file = schemas_dir / "semantic-index.schema.json"
+    index_dir = state_dir / "index"
+
+    if not schema_file.exists():
+        print("[INFO] semantic-index.schema.json not found; skipping index validation")
+        return 0
+
+    if not index_dir.exists() or not index_dir.is_dir():
+        print(
+            "[ERR]  state/index/ — missing; must be produced by semantic_index_writer.py",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        with schema_file.open("r", encoding="utf-8") as fh:
+            full_schema = json.load(fh)
+    except Exception as exc:
+        print(f"[ERR]  cannot load semantic-index.schema.json: {exc}", file=sys.stderr)
+        return 1
+
+    rc = 0
+    ok_count = 0
+    for filename, definition in _SEMANTIC_INDEX_FILES.items():
+        target = index_dir / filename
+        if not target.exists():
+            print(
+                f"[ERR]  state/index/{filename} — missing; must be produced by semantic_index_writer.py",
+                file=sys.stderr,
+            )
+            rc = 1
+            continue
+
+        try:
+            with target.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except json.JSONDecodeError as exc:
+            print(f"[ERR]  state/index/{filename} — JSON inválido: {exc}", file=sys.stderr)
+            rc = 1
+            continue
+
+        # Validate against the specific definition, resolving internal $refs.
+        # RefResolver is deprecated in jsonschema ≥4.18 but still functional;
+        # suppress the DeprecationWarning to keep output clean.
+        sub_schema = {"$ref": f"#/definitions/{definition}"}
+        try:
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*RefResolver.*")
+                resolver = jsonschema.RefResolver.from_schema(full_schema)
+                jsonschema.validate(data, sub_schema, resolver=resolver)
+            print(f"[OK]   state/index/{filename}")
+            ok_count += 1
+        except jsonschema.ValidationError as exc:
+            print(
+                f"[ERR]  state/index/{filename}\n"
+                f"       schema: state/_schemas/semantic-index.schema.json"
+                f"#/definitions/{definition}\n"
+                f"       reason: {exc.message}",
+                file=sys.stderr,
+            )
+            rc = 1
+        except jsonschema.SchemaError as exc:
+            print(
+                f"[ERR]  state/index/{filename} — schema error: {exc.message}",
+                file=sys.stderr,
+            )
+            rc = 1
+
+    if ok_count > 0 and rc == 0:
+        print(f"[OK]   state/index/ — {ok_count} index file(s) valid")
+
+    return rc
+
+
+# ---------------------------------------------------------------------------
 # Reporte de archivos auxiliares (sin schema)
 # ---------------------------------------------------------------------------
 
@@ -534,7 +635,12 @@ def main() -> int:
     if result != 0:
         rc = result
 
-    # ── 4. Archivos auxiliares sin schema ─────────────────────────────────────
+    # ── 4. Validación especial: state/index/ (semantic-index) ────────────────
+    result = validate_semantic_index(SCHEMAS_DIR, state_dir, jsonschema)
+    if result != 0:
+        rc = result
+
+    # ── 5. Archivos auxiliares sin schema ─────────────────────────────────────
     report_auxiliary_files(SCHEMAS_DIR, state_dir)
 
     return rc
