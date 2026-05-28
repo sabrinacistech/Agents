@@ -18,7 +18,7 @@ Coordinar el flujo completo, validar gates G1–G8 entre fases y mantener `state
 ## Salidas
 - `state/execution-state.json`
 - `state/_summaries/cycle-<n>.json`
-- Reporte final delegado a `reporting-agent`.
+- Reporte final delegado a `tools/python/cycle_report_builder.py` (ex-`reporting-agent`, migrado a Python determinístico).
 
 ## Reglas
 1. Invocar fases en el orden de `skills/00-runtime/02-phase-contracts.md`.
@@ -75,6 +75,7 @@ orquestador invoca las herramientas; no hay agente LLM intermedio.
 | Archetype            | `archetype_detector.py`           | `state/archetype-profile.json`                                   |
 | Generated code       | `generated_code_scanner.py`       | `state/generated-code-index.json`                                |
 | Classpath / whitelist| `classpath_resolver.py`           | `state/import-whitelist.json`                                    |
+| Repo intelligence    | `repo_intelligence.py` (wrapper)  | `state/_summaries/repo-intelligence.json` + outputs de stack/contracts/index/classification/deps |
 | Stack profile        | `stack_profile_detector.py`       | `state/stack-profile.json`                                       |
 | Symbol contracts     | `bytecode_scanner.py` + `source_symbol_enricher.py` | `state/symbol-contracts/<fqcn>.json`               |
 | Coverage targets     | `jacoco_parser.py --mode targets` | `state/coverage-targets.json`                                    |
@@ -89,9 +90,10 @@ orquestador invoca las herramientas; no hay agente LLM intermedio.
 | Generation (LLM)     | `test-intent-agent` + `test-body-agent` | patch JSON → `tools/python/test_patch_applier.py`          |
 | Pre-compile lint     | `gate_runner.py` → `test_linter.py` (G6-quality ON por default) | `state/linter-violations.json` (violaciones G1/G2/G5/G6-quality estructuradas) + `state/_summaries/gates.json` |
 | Narrow validation    | `narrow_test_runner.py` + `compile_error_parser.py` | `state/_summaries/build-output.log` + `state/compile-error-index.json` + `state/coverage-delta.json` |
-| Repair (LLM)         | `repair-agent`                    | Consume `state/linter-violations.json` (procesado antes que `compile-error-index.json` contra `repair-rules/quality.rules`) → nuevo patch JSON |
+| Mutation hardening   | `mutation_runner.py` (sólo `--coverage-mode mutation-hardening`) | `state/mutation-intelligence.json` |
+| Repair (LLM)         | `repair-agent`                    | Consume el subset escalado de `state/linter-violations.json` + `state/compile-error-index.json` (el driver ya intentó `repair-rules/quality.rules` y los otros `*.rules` determinísticamente) → nuevo patch JSON |
+| Cycle reporting      | `cycle_report_builder.py`         | `state/_summaries/cycle-<N>-report.json` (summary, sutReports, gateStatus, recommendations) |
 | Cycle summary        | `cycle_summarizer.py`             | `state/_summaries/cycle-<N>.json`                                |
-| Reporting (LLM)      | `reporting-agent`                 | reporte final                                                    |
 
 Reglas heredadas (antes vivían en los stubs `planning-agent` / `fixture-agent`
 / `validation-agent`):
