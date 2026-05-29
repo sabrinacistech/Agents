@@ -415,8 +415,10 @@ $ExecStateJson = @"
     Write-Host ""
     Write-Host "  Enforcement (by construction):" -ForegroundColor Cyan
     Write-Host "    - test_patch_applier.py rejects patches that fail G1/G2/G5/G7 or exceed budget."
-    Write-Host "    - Wrap each generation+patch cycle so maxCycles/maxMinutes tick:"
-    Write-Host "        python tools\python\cycle_runner.py --state `"$ExecStatePath`" -- <patch+lint command>" -ForegroundColor White
+    Write-Host "    - Drive cycles through cycle_loop.py: it ticks maxCycles/maxMinutes AND writes the"
+    Write-Host "      G8 fields (consecutiveZeroDeltaCycles, compileFailRateWindow) so no-progress /"
+    Write-Host "      compile-fail-rate stalls halt the loop deterministically, not by LLM convention:"
+    Write-Host "        python tools\python\cycle_loop.py --state `"$ExecStatePath`" --state-dir `"$StateDir`" -- <one-cycle generate+patch+validate command>" -ForegroundColor White
 } else {
     Write-Host ("  PIPELINE FAILED  (exit {0}, {1}s)" -f $PipelineExit, $elapsedSec) -ForegroundColor Red
     Write-Host "========================================================" -ForegroundColor Cyan

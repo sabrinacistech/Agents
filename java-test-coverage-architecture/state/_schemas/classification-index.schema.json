@@ -2,6 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "classification-index.schema.json",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schemaVersion",
     "classes"
@@ -9,6 +10,9 @@
   "properties": {
     "schemaVersion": {
       "const": 1
+    },
+    "generatedAt": {
+      "type": "string"
     },
     "classes": {
       "type": "array",

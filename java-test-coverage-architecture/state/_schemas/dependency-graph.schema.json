@@ -2,10 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "dependency-graph.schema.json",
   "type": "object",
+  "additionalProperties": false,
   "definitions": {
     "evidenceId": {
       "type": "string",
-      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+      "comment": "Base form (sym|ctor|builder):FQCN:8hex, plus the dependency-graph-only :pN suffix that dependency_graph_extractor.py appends to identify constructor parameter N (see :250). Other schemas keep the strict base form so G2 patch evidence cites whole symbols, not params.",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}(:p[0-9]+)?$"
     }
   },
   "required": [

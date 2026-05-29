@@ -3,6 +3,7 @@
   "$id": "generated-tests.schema.json",
   "description": "Tests propuestos en el ciclo actual — escrito por test-body-agent (vía test_patch_applier.py), leído por reporting-agent y cycle_summarizer.",
   "type": "object",
+  "additionalProperties": false,
   "definitions": {
     "evidenceId": {
       "type": "string",

@@ -2,6 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "generated-code-index.schema.json",
   "type": "object",
+  "additionalProperties": false,
   "required": ["schemaVersion", "module", "generators", "excludedFqcns", "excludedPackages"],
   "properties": {
     "schemaVersion": { "const": 1 },
