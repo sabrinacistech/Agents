@@ -71,8 +71,11 @@ from common import _TimedRun, emit_tool_summary  # noqa: E402
 # "index" added post-audit 2026-05-28: semantic_index_writer also has its own
 # fingerprint short-circuit, but caching at the orchestrator level avoids the
 # Python subprocess spawn entirely when symbol-contracts/ is unchanged.
+# "bytecode" and "source" added 2026-05-29: signature uses mtime+size for
+# .class / .java files because full content hashing of thousands of files
+# would dominate the cache-check cost.
 _CACHEABLE_STEPS: frozenset[str] = frozenset({
-    "stack", "classification", "index", "planning", "context",
+    "stack", "bytecode", "source", "classification", "index", "planning", "context",
 })
 
 
@@ -131,6 +134,18 @@ def _safe_hash(parts: list[str]) -> str:
     return h.hexdigest()
 
 
+def _file_stamp(p: Path) -> str:
+    """Lightweight (mtime_ns, size) stamp for cheap cache signatures.
+
+    Used when full SHA-256 of the file would be too slow because the input
+    set may contain thousands of bytecode or source files. The kernel
+    updates mtime on every write, so this is reliable for detecting changes
+    without paying for content hashing.
+    """
+    st = p.stat()
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
 def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
     """Return list of input identifiers for a cacheable step, or None if
     inputs cannot be enumerated (treat as always-miss).
@@ -151,6 +166,55 @@ def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
                 parts.append(f"{p}:{_sha256_file(p)}")
             except OSError:
                 return None
+        return parts
+    if step == "bytecode":
+        # bytecode_scanner consumes target/classes/**/*.class of the active
+        # module, filtered by --include-fqcn and optionally --sut. Use
+        # mtime+size stamps to keep the cache-check sub-second on big repos
+        # (post-audit 2026-05-29).
+        repo = Path(args.repo)
+        module = args.module or "."
+        classes_dir = (repo / module if module != "." else repo) / "target" / "classes"
+        if not classes_dir.exists():
+            return None
+        parts.append(f"module={module}")
+        parts.append(f"include={args.include_fqcn or '.*'}")
+        parts.append(f"sut={args.sut or ''}")
+        try:
+            for cf in sorted(classes_dir.rglob("*.class")):
+                if "$" in cf.name:
+                    continue
+                parts.append(f"{cf.relative_to(classes_dir)}:{_file_stamp(cf)}")
+        except OSError:
+            return None
+        return parts
+    if step == "source":
+        # source_symbol_enricher reads .java sources AND rewrites the
+        # symbol-contracts produced by bytecode_scanner. Because the step
+        # mutates its own contract inputs, hashing the contract *contents*
+        # would make the signature differ between pre-step and post-step
+        # state — leading to permanent cache misses. Instead we use:
+        #   - .java file stamps (source code change = re-enrich)
+        #   - the *set* of contract filenames (new SUT = re-enrich)
+        # Contract content changes are already covered by the bytecode
+        # step's stamps, so this is sufficient (post-audit 2026-05-29).
+        repo = Path(args.repo)
+        module = args.module
+        mod_dir = (repo / module) if module else repo
+        parts.append(f"module={module or ''}")
+        try:
+            for rel in ("src/main/java", "target/generated-sources", "target/generated-test-sources"):
+                base = mod_dir / rel
+                if base.exists():
+                    for jf in sorted(base.rglob("*.java")):
+                        parts.append(f"{jf.relative_to(mod_dir)}:{_file_stamp(jf)}")
+        except OSError:
+            return None
+        contracts_dir = out_dir / "symbol-contracts"
+        if contracts_dir.exists():
+            for p in sorted(contracts_dir.glob("*.json")):
+                # Names only — see docstring above for why content is excluded.
+                parts.append(f"contract-name:{p.name}")
         return parts
     if step == "classification":
         idx_dir = out_dir / "index"

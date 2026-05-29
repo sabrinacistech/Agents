@@ -177,42 +177,84 @@ def remove_unused_stub(text: str, method: str) -> tuple[str, int]:
     return new_text, removed
 
 
+_SUT_FIELD_NAME_RE_TEMPLATE = (
+    r"@InjectMocks\b[^\n]*\n?\s*"
+    r"(?:@[\w.]+(?:\([^)]*\))?\s*\n?\s*)*"
+    r"(?:(?:private|protected|public|final|static)\s+)*"
+    r"{se}\s+(\w+)\s*[;=]"
+)
+
+
 def convert_mock_sut_to_inject_mocks(text: str, sut_simple_name: str) -> tuple[str, int]:
-    """Replace ``@Mock`` with ``@InjectMocks`` for a field whose declared type
-    is exactly ``sut_simple_name``. Handles both layouts:
+    """Convert SUT-mocking into proper Mockito @InjectMocks wiring.
 
-      Same-line:   ``@Mock FooService sut;``
-      Next-line:   ``@Mock\\n    FooService sut;`` (optionally with extra
-                    annotations between).
+    Three deterministic transformations, performed in order:
 
-    Idempotent — fields already marked ``@InjectMocks`` are left alone.
+      1. Flip ``@Mock`` → ``@InjectMocks`` on fields whose declared type is
+         exactly ``sut_simple_name`` (both same-line and multi-line layouts).
+      2. Drop local declarations of the form
+         ``<SUT> <localVar> = mock(<SUT>.class);`` — once a field carries
+         ``@InjectMocks``, the local mock is redundant *and* shadows the SUT
+         injection point Mockito set up.
+      3. Rewrite references to those local variables to point at the
+         ``@InjectMocks`` field. Skipped when no SUT field exists, since we'd
+         leave dangling identifiers; the LLM repair-agent picks that up via
+         the residual ``TQG_12_OVER_MOCK_SUT`` violation.
+
+    Idempotent: already-converted fields and already-removed local mocks
+    pass through unchanged. Returns the total number of mutations applied.
     """
     if not sut_simple_name or not re.match(r"^\w+$", sut_simple_name):
         return text, 0
     se = re.escape(sut_simple_name)
     converted = 0
 
-    # Same-line pattern: `@Mock <maybe modifiers> SUT <name>;`
+    # 1a. Same-line: `@Mock <maybe modifiers> SUT <name>;`
     same_line = re.compile(
         rf"(^\s*)@Mock(\s+)((?:(?:private|protected|public|final|static)\s+)*){se}\b",
         re.MULTILINE,
     )
-    new_text, n = same_line.subn(
+    text, n = same_line.subn(
         lambda m: f"{m.group(1)}@InjectMocks{m.group(2)}{m.group(3)}{sut_simple_name}", text
     )
     converted += n
-    text = new_text
 
-    # Multi-line pattern: `@Mock` on its own line, then the field declaration.
+    # 1b. Multi-line: `@Mock` on its own line, then the field declaration.
     multi_line = re.compile(
         rf"(^\s*)@Mock(\s*)\n(\s*(?:@[\w.]+\s*\n\s*)*)((?:(?:private|protected|public|final|static)\s+)*{se}\b)",
         re.MULTILINE,
     )
-    new_text, n = multi_line.subn(
+    text, n = multi_line.subn(
         lambda m: f"{m.group(1)}@InjectMocks{m.group(2)}\n{m.group(3)}{m.group(4)}", text
     )
     converted += n
-    return new_text, converted
+
+    # 2. Identify the @InjectMocks SUT field name (post-step-1) so we know
+    #    where to redirect local references. Without it we leave local mocks
+    #    alone — removing them would dangle every downstream identifier.
+    sut_field_re = re.compile(_SUT_FIELD_NAME_RE_TEMPLATE.format(se=se))
+    sut_field_match = sut_field_re.search(text)
+    sut_field = sut_field_match.group(1) if sut_field_match else None
+
+    # 3. Drop local `<SUT> <var> = mock(<SUT>.class);` declarations and
+    #    capture the var names so we can rewrite references.
+    local_decl = re.compile(
+        rf"^[ \t]*(?:final\s+)?{se}\s+(\w+)\s*=\s*mock\s*\(\s*{se}\.class\s*\)\s*;[ \t]*\n",
+        re.MULTILINE,
+    )
+    local_vars: list[str] = [m.group(1) for m in local_decl.finditer(text)]
+
+    if local_vars and sut_field:
+        text = local_decl.sub("", text)
+        for var in local_vars:
+            # Whole-word replace; never touch the SUT field name even if it
+            # collides (it shouldn't, but be defensive).
+            if var == sut_field:
+                continue
+            text = re.sub(rf"\b{re.escape(var)}\b", sut_field, text)
+        converted += len(local_vars)
+
+    return text, converted
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
