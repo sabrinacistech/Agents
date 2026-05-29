@@ -69,7 +69,7 @@ El context pack es un JSON que contiene exactamente:
     "org.mockito.Mock",
     "org.assertj.core.api.Assertions"
   ],
-  "existingTests": ["testDoFoo_happyPath"],
+  "existingTests": ["shouldReturnResult_whenInputValid"],
   "failureMemory": []
 }
 ```
@@ -119,7 +119,7 @@ intención estructurada:
   ],
   "methods": [
     {
-      "name": "testDoFoo_happyPath",
+      "name": "shouldReturnResult_whenInputValid",
       "annotations": ["@Test"],
       "body": "// arrange\nwhen(fooRepository.findById(1L)).thenReturn(Optional.of(new Foo()));\n// act\nString result = sut.doFoo(1L);\n// assert\nassertThat(result).isEqualTo(\"expected\");",
       "evidenceIds": ["sym:com.acme.FooService#doFoo:e7a1b2c3"]

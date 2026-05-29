@@ -27,10 +27,10 @@ como **parches AST quirúrgicos**.
     { "op": "AddField",  "modifiers": ["@Mock","private"], "type": "BarRepository", "name": "barRepo" },
     { "op": "InsertMethod",
       "anchor": { "kind": "endOfClass" },
-      "source": "@Test\nvoid shouldReturnEmptyWhenNotFound() { /* ... */ }"
+      "source": "@Test\nvoid shouldReturnEmpty_whenNotFound() { /* ... */ }"
     }
   ],
-  "evidenceIds": ["sym:com.acme.FooService#findById(Long)", "sym:com.acme.BarRepository#findById(Long)"]
+  "evidenceIds": ["sym:com.acme.FooService#findById:7c4a1b2e", "sym:com.acme.BarRepository#findById:9e2f3a1d"]
 }
 ```
 

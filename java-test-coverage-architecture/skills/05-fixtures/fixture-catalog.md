@@ -23,7 +23,7 @@
       "id": "fx:Order:default",
       "type": "com.acme.Order",
       "strategy": "builder",
-      "builderEvidence": "builder:com.acme.Order:lombok:a91c",
+      "builderEvidence": "builder:com.acme.Order:a91c2d3e",
       "values": {
         "id": "ord-001",
         "amount": "10.00",

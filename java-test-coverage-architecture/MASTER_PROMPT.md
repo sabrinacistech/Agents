@@ -210,7 +210,7 @@ Política parametrizada por annotation processor detectado en `stack-profile.jso
     {
       "testClass": "com.acme.FooServiceTest",
       "sut": "com.acme.FooService",
-      "evidenceIds": ["sym:com.acme.FooService#bar(java.lang.String):e7a1b2c3"]
+      "evidenceIds": ["sym:com.acme.FooService#bar:e7a1b2c3"]
     }
   ],
   "discardedTests": [

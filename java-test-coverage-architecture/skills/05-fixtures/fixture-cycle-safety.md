@@ -116,7 +116,7 @@ Para cada tipo resuelto, persistir la resolución para evitar re-calcularla:
   "strategy": "mock",
   "resolution": "mock_cyclic_dep",
   "code": "@InjectMocks OrderService sut;\n@Mock PaymentService paymentService;",
-  "evidenceId": "ctor:com.acme.OrderService:a1b2"
+  "evidenceId": "ctor:com.acme.OrderService:a1b2c3d4"
 }
 ```
 

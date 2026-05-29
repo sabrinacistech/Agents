@@ -21,7 +21,7 @@ Por SUT, listar exactamente qué métodos de cada repositorio invoca, para limit
       "type": "com.acme.OrderRepository",
       "methods": [
         {
-          "evidenceId": "sym:com.acme.OrderRepository#findById(java.lang.String):a4d2",
+          "evidenceId": "sym:com.acme.OrderRepository#findById:a4d2b1e9",
           "name": "findById",
           "params": ["java.lang.String"],
           "returnType": "java.util.Optional<com.acme.Order>",

@@ -15,7 +15,7 @@
       "id": "fx-foo-default",
       "type": "com.acme.Foo",
       "strategy": "constructor",
-      "constructorEvidence": "ctor:com.acme.Foo:a1b2",
+      "constructorEvidence": "ctor:com.acme.Foo:a1b2c3d4",
       "cycleSafe": true,
       "values": { "name": "test", "id": 42 }
     }

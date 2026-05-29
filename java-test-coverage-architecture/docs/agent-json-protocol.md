@@ -88,7 +88,7 @@ Los archivos se guardan en `state/_patches/<testClass>.patch.json`.
   ],
   "methods": [
     {
-      "name": "testDoFoo_happyPath",
+      "name": "shouldReturnResult_whenInputValid",
       "annotations": ["@Test"],
       "body": "// arrange\nwhen(fooRepository.findById(1L)).thenReturn(Optional.of(new Foo()));\n// act\nString result = sut.doFoo(1L);\n// assert\nassertThat(result).isEqualTo(\"expected\");\n// evidence: sym:com.acme.FooService#doFoo:e7a1b2c3, ctor:com.acme.Foo:b3c2d4e5",
       "evidenceIds": [
@@ -149,7 +149,7 @@ Los archivos se guardan en `state/_patches/<testClass>.patch.json`.
 
 ```json
 {
-  "name": "testDoFoo_happyPath",
+  "name": "shouldReturnResult_whenInputValid",
   "annotations": ["@Test"],
   "body": "<contenido del cuerpo del método, sin llaves externas>",
   "evidenceIds": ["sym:com.acme.FooService#doFoo:e7a1b2c3"]
@@ -163,8 +163,13 @@ Los archivos se guardan en `state/_patches/<testClass>.patch.json`.
 | `annotations` | no | Lista de anotaciones, default `["@Test"]` |
 | `evidenceIds` | no | IDs de evidencia citados en el método (desde contratos) |
 
-**Convención de naming**: `test<Metodo>_<escenario>` en camelCase.
-Ejemplos: `testDoFoo_happyPath`, `testDoFoo_throwsWhenNull`, `testDoFoo_emptyResult`.
+**Convención de naming** (enforced por `TQG_03_NAMING` —
+`tools/python/test_linter.py` / `skills/11-quality/03-test-naming.md`): el nombre
+debe matchear una de las **dos** formas aceptadas:
+`^should[A-Z]\w*_when[A-Z]\w*$` o `^[a-z]\w+_[a-z]\w+_[a-z]\w+$` (snake, 3
+segmentos). Ejemplos válidos: `shouldReturnResult_whenInputValid`,
+`shouldThrow_whenInputNull`, `doFoo_emptyInput_returnsEmpty`. Nombres genéricos
+(`test1`, `testMethod`) y la forma `testX_escenario` son **rechazados**.
 
 **Regla**: cada símbolo en `body` (`new X()`, `x.method()`, `X.static()`) debe
 tener un `evidence-id` correspondiente en `evidenceIds[]`.
@@ -207,7 +212,7 @@ El Repair Agent produce el mismo formato de patch descriptor, con la distinción
   "errorCode": "E_IMPORT_UNRESOLVED",
   "methods": [
     {
-      "name": "testDoFoo_happyPath",
+      "name": "shouldReturnResult_whenInputValid",
       "annotations": ["@Test"],
       "body": "...",
       "evidenceIds": [...]

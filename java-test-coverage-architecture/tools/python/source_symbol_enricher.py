@@ -123,7 +123,11 @@ def enrich_contract(contract_path: Path, src: dict, source_index: dict[str, dict
         builder_exists = src.get("has_declared_builder")
         if builder_exists:
             builder = {
-                "evidenceId": eid(f"builder:{fqcn}:freebuilder", fqcn),
+                # evidenceId must match the canonical strict grammar
+                # `builder:<fqcn>:<8hex>` (symbol-contract.schema.json#/definitions/evidenceId);
+                # the builder kind lives in the `kind` field, NOT in the id string. The
+                # hash key still folds in the kind so distinct builder kinds never collide.
+                "evidenceId": eid(f"builder:{fqcn}", f"builder:{fqcn}:freebuilder"),
                 "kind": "freebuilder",
                 "entry": f"new {simple}.Builder()",
                 "build": "build()",

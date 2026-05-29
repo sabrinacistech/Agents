@@ -19,7 +19,7 @@ Registrar builders disponibles por tipo y la estrategia de instanciación segura
 {
   "builders": [
     {
-      "evidenceId": "builder:com.acme.Order:lombok:a91c",
+      "evidenceId": "builder:com.acme.Order:a91c2d3e",
       "kind": "lombok",
       "entry": "com.acme.Order.builder()",
       "build": "build()",

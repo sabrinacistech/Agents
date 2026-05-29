@@ -15,7 +15,7 @@ Registrar constructores reales de cada tipo usado por el test. Soporta gate **G2
 {
   "constructors": [
     {
-      "evidenceId": "ctor:com.acme.Foo(java.lang.String,int):3f1a",
+      "evidenceId": "ctor:com.acme.Foo:3f1a2b8c",
       "visibility": "public",
       "params": [
         { "type": "java.lang.String", "name": "name" },
@@ -28,7 +28,7 @@ Registrar constructores reales de cada tipo usado por el test. Soporta gate **G2
   "instantiation": {
     "allowed": true,
     "strategy": "constructor",
-    "preferred": "ctor:com.acme.Foo(java.lang.String,int):3f1a"
+    "preferred": "ctor:com.acme.Foo:3f1a2b8c"
   }
 }
 ```
@@ -37,4 +37,6 @@ Registrar constructores reales de cada tipo usado por el test. Soporta gate **G2
 - No declarar constructor `()` si no aparece en bytecode/AST.
 - Si todos los constructores son `private` ⇒ buscar `static factory` antes de marcar no instanciable.
 - Para clases anidadas no estáticas: registrar dependencia del enclosing instance.
-- `evidenceId` debe ser determinístico: `ctor:<fqcn>(<paramTypes>):<hash8>`.
+- `evidenceId` debe ser determinístico y matchear la gramática canónica
+  `ctor:<fqcn>:<hash8>` (sin la firma de parámetros en el string — el `<hash8>`
+  desambigua overloads). Patrón: `state/_schemas/symbol-contract.schema.json#/definitions/evidenceId`.

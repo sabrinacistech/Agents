@@ -21,9 +21,9 @@ Emitir tests JUnit que compilen y citen evidencia. Cero invención de símbolos.
 6. Anexar bloque de cita al final del método de test:
    ```java
    // evidence-ids:
-   //   sym:com.acme.FooService#calc(java.math.BigDecimal):e7a1b2c3
-   //   ctor:com.acme.FooService(com.acme.Repo):2b3d4e5f
-   //   builder:com.acme.Order:lombok:a91c2d3e
+   //   sym:com.acme.FooService#calc:e7a1b2c3
+   //   ctor:com.acme.FooService:2b3d4e5f
+   //   builder:com.acme.Order:a91c2d3e
    ```
 
 ## Reglas
