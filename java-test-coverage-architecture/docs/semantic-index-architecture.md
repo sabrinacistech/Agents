@@ -37,7 +37,8 @@ phase       phase     graph phase  contract   profile
 ```
 
 > Las cinco fases anteriormente representadas como agentes independientes están
-> hoy consolidadas en `agents/repository-intelligence-agent.md`.
+> hoy consolidadas en `tools/python/repo_intelligence.py` (wrapper determinista,
+> no un turno LLM).
 
 ## Esquemas
 

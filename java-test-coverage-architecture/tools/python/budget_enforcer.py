@@ -6,15 +6,24 @@ runaway cycles abort by construction, not by LLM convention.
 
 Subcommands
 -----------
-  check  → verify current state is within budget; exits 0 (ok) or 2 (exceeded)
-  tick   → increment cycle counter and stamp cycleStartedAt
-  reset  → clear cycleStartedAt (used at end of cycle)
+  check        → verify current state is within cycle/minute budget; exits 0 or 2
+  check-tokens → verify no SUT pack exceeds its input-token ceiling; exits 0 or 2
+  tick         → increment cycle counter and stamp cycleStartedAt
+  reset        → clear cycleStartedAt (used at end of cycle)
+
+The cost/token half of the budget lives in state/_summaries/llm-budget.json,
+which context_pack_builder.py already writes (estimatedTokensIn vs maxTokensIn
+per SUT). Until now that file only produced a `[WARN]`; nothing consumed it to
+block, so the cost/token budget was built but disconnected. `check-tokens` is
+that missing consumer — it turns the warning into a blocking gate so an
+over-budget pack never reaches the LLM. cycle_loop calls it before dispatch.
 
 Usage
 -----
-  python tools/python/budget_enforcer.py check --state state/execution-state.json
-  python tools/python/budget_enforcer.py tick  --state state/execution-state.json
-  python tools/python/budget_enforcer.py reset --state state/execution-state.json
+  python tools/python/budget_enforcer.py check        --state state/execution-state.json
+  python tools/python/budget_enforcer.py check-tokens --state-dir state/
+  python tools/python/budget_enforcer.py tick         --state state/execution-state.json
+  python tools/python/budget_enforcer.py reset        --state state/execution-state.json
 
 Exit codes
 ----------
@@ -80,6 +89,42 @@ def check(state_path: Path) -> tuple[int, dict]:
     }
 
 
+def check_token_budget(state_dir: Path) -> tuple[int, dict]:
+    """Enforce the per-SUT input-token ceiling recorded in
+    state/_summaries/llm-budget.json.
+
+    The ceiling is computed deterministically by context_pack_builder.py
+    (`estimatedTokensIn` vs `maxTokensIn`, `overBudget` flag). This is the
+    consumer that makes it blocking: if any SUT pack is over budget the cycle is
+    refused (exit 2) so the over-budget pack is never dispatched to the LLM and
+    no Java is written.
+
+    Absent file ⇒ EXIT_OK: no packs have been built yet, so there is nothing to
+    enforce here (the cycle/minute budget in `check` still bounds the loop). An
+    unreadable/malformed file ⇒ EXIT_MALFORMED so a corrupt budget never reads
+    as "within budget".
+    """
+    budget_path = state_dir / "_summaries" / "llm-budget.json"
+    if not budget_path.exists():
+        return EXIT_OK, {"ok": True, "reason": "noBudgetFile"}
+
+    data = json.loads(budget_path.read_text(encoding="utf-8"))
+    entries = data.get("entries", []) or []
+    over = []
+    for e in entries:
+        est = int(e.get("estimatedTokensIn", 0) or 0)
+        cap = e.get("maxTokensIn")
+        if e.get("overBudget") or (cap is not None and est > int(cap)):
+            over.append({"sut": e.get("sut"), "estimatedTokensIn": est, "maxTokensIn": cap})
+
+    if over:
+        return EXIT_EXCEEDED, {
+            "ok": False, "reason": "maxTokensIn",
+            "count": len(over), "overBudgetSuts": over,
+        }
+    return EXIT_OK, {"ok": True, "suts": len(entries)}
+
+
 def tick(state_path: Path) -> tuple[int, dict]:
     state = _load(state_path)
     state["cycle"] = int(state.get("cycle", 0)) + 1
@@ -100,13 +145,22 @@ _DISPATCH = {"check": check, "tick": tick, "reset": reset}
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Enforce execution-state.json budget at runtime.")
-    p.add_argument("action", choices=list(_DISPATCH))
-    p.add_argument("--state", required=True, type=Path,
-                   help="Path to state/execution-state.json")
+    p.add_argument("action", choices=[*_DISPATCH, "check-tokens"])
+    p.add_argument("--state", type=Path,
+                   help="Path to state/execution-state.json (check/tick/reset)")
+    p.add_argument("--state-dir", type=Path,
+                   help="State directory holding _summaries/llm-budget.json (check-tokens)")
     args = p.parse_args(argv)
 
     try:
-        rc, payload = _DISPATCH[args.action](args.state)
+        if args.action == "check-tokens":
+            if args.state_dir is None:
+                p.error("check-tokens requires --state-dir")
+            rc, payload = check_token_budget(args.state_dir)
+        else:
+            if args.state is None:
+                p.error(f"{args.action} requires --state")
+            rc, payload = _DISPATCH[args.action](args.state)
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         emit_tool_summary("budget_enforcer", "MALFORMED", error=str(e))
         return EXIT_MALFORMED

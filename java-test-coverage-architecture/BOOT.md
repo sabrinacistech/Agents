@@ -137,6 +137,10 @@ Resumen operativo:
 7. Antes de proponer un test, pasarlo por `tools/python/test_linter.py`. Si tiene violaciones G1/G6, descartarlo sin invocar `javac`.
 8. Respetar `state/generated-code-index.json#excludedFqcns` y `excludedPackages`: esas clases no son SUT.
 9. Respetar `state/archetype-profile.json#implies` para `javax`/`jakarta`, JUnit y JaCoCo.
+10. **`cycle_loop.py` es el dueño único del loop.** Todo ciclo
+    (Generation→Validation→Repair→Reporting) corre envuelto en él. Prohibido
+    invocar `gate_runner.py` o `test_patch_applier.py` fuera de ese wrapper: sin
+    el `tick` de `cycle`, el budget de ciclos/minutos/tokens y G8 quedan inertes.
 
 ---
 
@@ -149,11 +153,13 @@ ya no las ejecuta como turnos separados — solo lee el resumen que produce.
 ```text
 [DET] Phase 0:       run_pipeline.py  (16 steps, todo Python)
 [DET] Handoff gate:  validate_handoff.py  ← reemplaza las viejas fases LLM 1-7
-[LLM] Phase 8:       generation (test-intent → test-body)
-[DET] Phase 9:       validation (test_linter → narrow runner)
-[DET] Phase 10a:     repair determinista (repair_rules_compiler + ast_patcher)
-[LLM] Phase 10b:     repair-agent (solo si determinista escaló)
-[DET] Phase 11:      reporting (cycle_report_builder.py)
+┌─ cycle_loop.py ─ dueño único del loop (budget ciclos/minutos + tokens + G8) ─┐
+│ [LLM] Phase 8:       generation (test-intent → test-body)                     │
+│ [DET] Phase 9:       validation (test_linter → narrow runner)                 │
+│ [DET] Phase 10a:     repair determinista (repair_rules_compiler + ast_patcher)│
+│ [LLM] Phase 10b:     repair-agent (solo si determinista escaló)               │
+│ [DET] Phase 11:      reporting (cycle_report_builder.py)                       │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Comando obligatorio antes de Generation**:
@@ -167,6 +173,25 @@ Si la salida es `BLOCKED_PRE_STAGE_MISSING`, abortar y reportar
 consume **solamente** `state/_summaries/handoff-summary.json` +
 `state/context-packs-compact/<safe_fqcn>.json` por SUT. Está **prohibido**
 re-leer los nueve JSONs originales de las fases 1-7.
+
+**Comando obligatorio para correr el ciclo (Generation → Validation → Repair → Reporting)**:
+
+Con handoff `READY`, **nunca** invocar `gate_runner.py` ni `test_patch_applier.py`
+"a pelo". El ciclo se corre **exclusivamente** envuelto en `cycle_loop.py` — el
+único dueño del loop (ver `agents/coverage-orchestrator.md` regla 5). Es la única
+forma sancionada: aplica el budget de ciclos/minutos **y** el de costo/tokens
+(`llm-budget.json`) **y** la convergencia G8 **por construcción**. Fuera de este
+wrapper, `cycle` no se tickea y el backstop de budget del patcher queda inerte.
+
+```bash
+python tools/python/cycle_loop.py \
+    --state     ../.agent-state/execution-state.json \
+    --state-dir ../.agent-state/ \
+    -- <comando-de-un-ciclo: generation→patch→validation que (re)escribe coverage-delta.json>
+```
+
+`cycle_loop` para por sí solo: `rc=2` budget agotado (ciclos/minutos o tokens),
+`rc=5` stall G8, `rc=0` sin más targets. No correr Generation por fuera de él.
 
 Para CADA fase LLM (solo Generation y Repair):
 
@@ -205,4 +230,4 @@ python tools/python/cycle_report_builder.py \
 
 ## Arranque
 
-Empezá por **Phase 0** (auto-detección con `bootstrap.py` o ejecución manual de `run_pipeline.py`) y corré `validate_handoff.py`. Con handoff `READY`, avanzá **directo a Generation (Phase 8)**: las fases 1-7 ya las produjo el pipeline determinista y **no son turnos del LLM**.
+Empezá por **Phase 0** (auto-detección con `bootstrap.py` o ejecución manual de `run_pipeline.py`) y corré `validate_handoff.py`. Con handoff `READY`, avanzá **directo a Generation (Phase 8)** — envuelta en `cycle_loop.py`, el dueño único del loop (regla dura 10): las fases 1-7 ya las produjo el pipeline determinista y **no son turnos del LLM**.

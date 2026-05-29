@@ -44,7 +44,7 @@ vigentes de cada estado.
 | `compile-error-index.json`            | `tools/python/compile_error_parser.py` (post-build)            | No (post-LLM)        |
 | `coverage-delta.json` / `coverage-summary.json` | `tools/python/jacoco_parser.py`                       | No (post-LLM)        |
 | `generated-tests.json`                | `tools/python/test_patch_applier.py`                           | No (post-LLM)        |
-| `mutation-intelligence.json`          | `mutation-agent` (modo `mutation-hardening`, opt-in)           | No (modo opcional)   |
+| `mutation-intelligence.json`          | `tools/python/mutation_runner.py` (modo `mutation-hardening`, opt-in) | No (modo opcional)   |
 
 ## División absoluta del trabajo
 

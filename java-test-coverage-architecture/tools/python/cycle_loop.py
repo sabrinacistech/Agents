@@ -19,6 +19,10 @@ finiteness holds regardless of who drives generation. Each cycle:
 
   1. tick           — budget_enforcer increments `cycle` (1-based) + stamps start.
   2. budget check   — abort (rc 2) if this cycle exceeds maxCycles / minutes.
+  2b token check    — abort (rc 2) if any SUT context pack exceeds maxTokensIn
+                      (llm-budget.json). Runs before dispatch so an over-budget
+                      pack never reaches the LLM. This is the cost/token half of
+                      the Fundamental Rule, previously built-but-disconnected.
   3. run command    — the per-cycle work (generation + patch + validation); it is
                       expected to (re)write coverage-delta.json for the cycle.
   4. record outcome — write the TWO fields G8 reads, derived deterministically:
@@ -129,6 +133,17 @@ def run_loop(
             budget_enforcer.reset(state_path)
             print(f"[STOP] budget exceeded: {payload.get('reason')} "
                   f"(cycle={payload.get('cycle')}).", file=sys.stderr)
+            return RC_BUDGET_EXCEEDED
+
+        # Cost/token half of the budget: refuse to dispatch when any SUT's
+        # context pack exceeds its input-token ceiling (llm-budget.json). This
+        # gate runs BEFORE the cycle command so an over-budget pack never
+        # reaches the LLM and no Java is written.
+        tcrc, tpayload = budget_enforcer.check_token_budget(state_dir)
+        if tcrc != 0:
+            budget_enforcer.reset(state_path)
+            print(f"[STOP] token budget exceeded: {tpayload.get('count')} SUT(s) "
+                  f"over maxTokensIn: {tpayload.get('overBudgetSuts')}.", file=sys.stderr)
             return RC_BUDGET_EXCEEDED
 
         cmd_rc = subprocess.run(command, check=False).returncode

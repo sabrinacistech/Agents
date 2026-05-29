@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "generated-tests.schema.json",
-  "description": "Tests propuestos en el ciclo actual — escrito por test-body-agent (vía test_patch_applier.py), leído por reporting-agent y cycle_summarizer.",
+  "description": "Tests propuestos en el ciclo actual — escrito por test-body-agent (vía test_patch_applier.py), leído por tools/python/cycle_report_builder.py y cycle_summarizer.py.",
   "type": "object",
   "additionalProperties": false,
   "definitions": {

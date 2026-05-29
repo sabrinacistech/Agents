@@ -57,8 +57,11 @@ Coordinar el flujo completo, validar gates G1–G9 entre fases y mantener `state
        -- <comando-de-un-ciclo: generation→patch→validation que (re)escribe state/coverage-delta.json>
    ```
    Por cada iteración `cycle_loop`: (1) `tick` (incrementa `cycle` 1-based +
-   estampa inicio), (2) `check` de budget (abort `rc=2` si excedido), (3) corre
-   el comando del ciclo, (4) deriva y escribe los DOS campos que `gate_g8` lee
+   estampa inicio), (2) `check` de budget de ciclos/minutos (abort `rc=2` si
+   excedido), (2b) `check_token_budget` del presupuesto de costo/tokens —
+   `state/_summaries/llm-budget.json`; si algún context-pack de SUT excede
+   `maxTokensIn` ⇒ abort `rc=2` **antes** del dispatch (el pack over-budget
+   nunca llega al LLM, cero Java escrito), (3) corre el comando del ciclo, (4) deriva y escribe los DOS campos que `gate_g8` lee
    (`consecutiveZeroDeltaCycles`, `compileFailRateWindow`) desde
    `coverage-delta.json` y el exit code, (5) `reset` de `cycleStartedAt`, (6)
    evalúa `gate_g8` y para con `rc=5` ante un stall. **El comando envuelto debe
@@ -96,8 +99,9 @@ modificar cada test. Si la validación falla: `ast_patcher.py --rollback <diff>`
 Todos los códigos de parada los devuelve `cycle_loop.py` (dueño único del loop):
 - `rc=5` (`RC_CONVERGENCE_STALL`): G8 activado (delta=0 dos ciclos seguidos, o
   compile-fail-rate > 0.5) — thresholds canónicos en `gate_runner.gate_g8`.
-- `rc=2` (`RC_BUDGET_EXCEEDED`): budget agotado (`maxCycles` /
-  `maxMinutesPerCycle` de `budget_enforcer`).
+- `rc=2` (`RC_BUDGET_EXCEEDED`): budget agotado — `maxCycles` /
+  `maxMinutesPerCycle` de `budget_enforcer`, **o** un context-pack que excede
+  `maxTokensIn` (`budget_enforcer.check_token_budget` sobre `llm-budget.json`).
 - `rc=0` (`RC_DONE`): el comando de ciclo señaló "sin más targets"
   (`--done-exit-code`, default 7) o se alcanzó el objetivo de cobertura del modo.
 - Aborto manual.
