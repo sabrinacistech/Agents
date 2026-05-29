@@ -2,6 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "dependency-graph.schema.json",
   "type": "object",
+  "definitions": {
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+    }
+  },
   "required": [
     "schemaVersion",
     "graphs"
@@ -56,7 +62,7 @@
                   "description": "True if this type can be mocked with Mockito"
                 },
                 "evidenceId": {
-                  "type": "string",
+                  "$ref": "#/definitions/evidenceId",
                   "description": "Evidence ID from the source constructor param"
                 }
               }
@@ -90,7 +96,7 @@
                     ],
                     "properties": {
                       "evidenceId": {
-                        "type": "string"
+                        "$ref": "#/definitions/evidenceId"
                       },
                       "name": {
                         "type": "string"

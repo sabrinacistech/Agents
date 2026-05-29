@@ -208,6 +208,9 @@ _PARSERS = {
 }
 
 
+_MAX_ERRORS = 200  # schema maxItems — keep the JSON bounded for the repair-agent.
+
+
 def parse(log_path: Path, run_id: str, fmt: str = "auto") -> dict:
     text = log_path.read_text(encoding="utf-8", errors="ignore")
     resolved_fmt = detect_format(text) if fmt == "auto" else fmt
@@ -218,6 +221,10 @@ def parse(log_path: Path, run_id: str, fmt: str = "auto") -> dict:
             f"Valid values: {list(_PARSERS)} + 'auto'"
         )
     result = parser(text, run_id)
+    errs = result.get("errors", [])
+    if len(errs) > _MAX_ERRORS:
+        result["errors"] = errs[:_MAX_ERRORS]
+        result["truncated"] = {"total": len(errs), "kept": _MAX_ERRORS}
     result["format"] = resolved_fmt  # informational; not in schema required fields
     return result
 

@@ -5,6 +5,11 @@
   "description": "Schema for all five files produced by semantic_index_writer.py into state/index/. Files are written to the execution folder (java-test-coverage-architecture_execution_<project>_<date>/state/index/) and reference this schema via a relative $schema field.",
   "definitions": {
 
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+    },
+
     "classEntry": {
       "type": "object",
       "description": "Per-FQCN class descriptor written to classes.json",
@@ -36,7 +41,7 @@
         "returnType": { "type": "string" },
         "modifiers":  { "type": "array", "items": { "type": "string" } },
         "throws":     { "type": "array", "items": { "type": "string" } },
-        "evidenceId": { "type": "string", "description": "Stable hash-based ID for cross-referencing" }
+        "evidenceId": { "$ref": "#/definitions/evidenceId", "description": "Stable hash-based ID for cross-referencing" }
       }
     },
 

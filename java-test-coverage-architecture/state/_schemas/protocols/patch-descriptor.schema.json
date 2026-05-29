@@ -7,6 +7,10 @@
     { "$ref": "#/definitions/blocked" }
   ],
   "definitions": {
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+    },
     "blocked": {
       "type": "object",
       "additionalProperties": false,
@@ -31,7 +35,7 @@
         "template":      { "type": "string" },
         "targetModule":  { "type": ["string", "null"] },
         "targetDir":     { "type": "string" },
-        "repairOf":      { "type": "string", "pattern": "^patch:[0-9a-fA-F]{6,}$" },
+        "repairOf":      { "type": "string", "pattern": "^(patch|repair):[0-9a-fA-F]{6,}$" },
         "errorCode":     { "type": "string" },
         "allowedImports": {
           "type": "array",
@@ -73,7 +77,7 @@
         "body":         { "type": "string" },
         "evidenceIds":  {
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "$ref": "#/definitions/evidenceId" }
         }
       }
     }

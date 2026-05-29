@@ -4,6 +4,12 @@
   "title": "LLM Context Pack — minimal per-SUT bundle consumed by LLM agents",
   "description": "The ONLY JSON artifact an LLM agent may read. No source code, POM, or JaCoCo XML allowed.",
   "type": "object",
+  "definitions": {
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+    }
+  },
   "required": [
     "schemaVersion",
     "sut",
@@ -138,7 +144,7 @@
         "required": ["evidenceId", "visibility", "params"],
         "additionalProperties": false,
         "properties": {
-          "evidenceId": { "type": "string" },
+          "evidenceId": { "$ref": "#/definitions/evidenceId" },
           "visibility": { "enum": ["public", "protected", "package", "private"] },
           "params": {
             "type": "array",
@@ -165,7 +171,7 @@
         "required": ["evidenceId", "name", "returnType", "params", "usable"],
         "additionalProperties": false,
         "properties": {
-          "evidenceId": { "type": "string" },
+          "evidenceId": { "$ref": "#/definitions/evidenceId" },
           "name":       { "type": "string" },
           "returnType": { "type": "string" },
           "params": {
@@ -222,7 +228,7 @@
               "required": ["evidenceId", "name", "params", "returnType"],
               "additionalProperties": false,
               "properties": {
-                "evidenceId": { "type": "string" },
+                "evidenceId": { "$ref": "#/definitions/evidenceId" },
                 "name":       { "type": "string" },
                 "params":     { "type": "array", "items": { "type": "string" } },
                 "returnType": { "type": "string" },

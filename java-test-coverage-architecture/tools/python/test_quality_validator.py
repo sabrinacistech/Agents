@@ -185,6 +185,55 @@ def check_aaa_ordering(text: str) -> list[dict]:
     return violations
 
 
+def check_unused_stubs(text: str) -> list[dict]:
+    """TQG_06_UNUSED_STUB — Mockito stub declared but the stubbed method is
+    never invoked elsewhere in the same test method.
+
+    Heuristic: per @Test body, collect every ``when(mock.method(...))`` and
+    every ``given(mock.method(...))``, then count occurrences of
+    ``mock.method`` anywhere in the body. If the count is exactly one (the
+    stub itself), the stub is unused. ``doX().when(mock).method(...)`` and
+    ``BDDMockito.willX().given(mock).method(...)`` are also recognised.
+
+    The check is intentionally conservative: any uncertainty (different mock
+    names with shared method, fluent chains) skips the report. False
+    negatives are preferred to false positives — the LLM repair-agent is
+    still the backstop.
+    """
+    import re
+
+    when_call = re.compile(r"\bwhen\s*\(\s*(\w+)\s*\.\s*(\w+)\s*\(")
+    given_call = re.compile(r"\bgiven\s*\(\s*(\w+)\s*\.\s*(\w+)\s*\(")
+    do_when = re.compile(
+        r"\b(?:doReturn|doThrow|doAnswer|doNothing|doCallRealMethod)\s*\([^)]*\)\s*\.\s*when\s*\(\s*(\w+)\s*\)\s*\.\s*(\w+)\s*\("
+    )
+    will_given = re.compile(
+        r"\b(?:willReturn|willThrow|willAnswer|willDoNothing|willCallRealMethod)\s*\([^)]*\)\s*\.\s*given\s*\(\s*(\w+)\s*\)\s*\.\s*(\w+)\s*\("
+    )
+
+    violations: list[dict] = []
+    for name, body in _extract_method_bodies_with_comments(text):
+        stubs: set[tuple[str, str]] = set()
+        for rx in (when_call, given_call, do_when, will_given):
+            for m in rx.finditer(body):
+                stubs.add((m.group(1), m.group(2)))
+        for mock, method in stubs:
+            usage_rx = re.compile(rf"\b{re.escape(mock)}\.\s*{re.escape(method)}\s*\(")
+            if len(usage_rx.findall(body)) <= 1:
+                violations.append({
+                    "gate": "G6",
+                    "kind": "TQG_06_UNUSED_STUB",
+                    "skill": "11-quality/06",
+                    "method": name,
+                    "symbol": f"{mock}.{method}",
+                    "reason": (
+                        f"Stub {mock}.{method}(...) is declared but never invoked "
+                        f"elsewhere in {name} — drop the stub or exercise the method"
+                    ),
+                })
+    return violations
+
+
 def check_assert_not_null_tautology(tree: Any) -> list[dict]:
     """TQG_12_TAUTOLOGY (extension) — assertNotNull(<literal>) or
     assertNotNull(new X()) is a tautology: the argument can never be null."""
@@ -278,7 +327,10 @@ def validate(
     # 2) AAA ordering — pure text, independent of javalang availability
     violations.extend(check_aaa_ordering(text))
 
-    # 3) AST-based checks — only if javalang is installed and parse succeeds
+    # 3) Unused-stub detection — pure text, independent of javalang
+    violations.extend(check_unused_stubs(text))
+
+    # 4) AST-based checks — only if javalang is installed and parse succeeds
     parse_error: str | None = None
     if not _HAS_JAVALANG:
         parse_error = "javalang not installed — AST checks skipped"

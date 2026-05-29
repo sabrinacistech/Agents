@@ -55,12 +55,17 @@ from common import _TimedRun  # noqa: E402
 _NOT_IMPLEMENTED: dict[str, str] = {
     "G2": "symbol-contract evidence cross-check not implemented yet",
     "G4": "fixture/strategy validation not implemented yet",
-    "G8": "JaCoCo coverage delta gating not implemented yet",
 }
 
 # G7 thresholds — match the rules declared in agents/repair-agent.md.
 _G7_MAX_FAILED_ATTEMPTS = 2   # same (errorCode, symbolFQN, fixId) hash
 _G7_MAX_TESTCASE_ATTEMPTS = 3  # cumulative attempts for one testCaseId
+
+# G8 thresholds — finiteness by construction. retry-policy.md / MASTER_PROMPT.md
+# both pin these: two consecutive zero-delta cycles → halt; latest compile-fail
+# rate above 50% → halt.
+_G8_MAX_ZERO_DELTA_CYCLES = 2
+_G8_MAX_COMPILE_FAIL_RATE = 0.5
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -390,6 +395,96 @@ def gate_g6(state_dir: Path, test_file: Path | None) -> dict:
     return {"status": "PASS", "violationCount": 0, "violationsPath": str(out_path)}
 
 
+def gate_g8(state_dir: Path) -> dict:
+    """G8 — finiteness gate. Halts the cycle when convergence stalls.
+
+    Reads state/execution-state.json and blocks if either:
+      - consecutiveZeroDeltaCycles >= _G8_MAX_ZERO_DELTA_CYCLES (no JaCoCo
+        progress for two cycles in a row), or
+      - the most recent entry in compileFailRateWindow exceeds
+        _G8_MAX_COMPILE_FAIL_RATE (the cycle is producing more compile
+        failures than passes — keep reparing and you just burn budget).
+
+    Missing/empty execution-state is treated as PASS rather than NOT_IMPLEMENTED:
+    a fresh repo has not produced enough cycles to observe a stall.
+    """
+    path = state_dir / "execution-state.json"
+    if not path.exists():
+        return {"status": "PASS", "detail": "execution-state.json missing — first cycle"}
+    try:
+        state = _load_json(path)
+    except Exception as exc:
+        return {
+            "status": "FAIL",
+            "blockedReason": "G8_STATE_UNREADABLE",
+            "reason": f"cannot load execution-state.json: {exc}",
+        }
+
+    zero_delta = int(state.get("consecutiveZeroDeltaCycles", 0) or 0)
+    if zero_delta >= _G8_MAX_ZERO_DELTA_CYCLES:
+        return {
+            "status": "FAIL",
+            "blockedReason": "G8_NO_DELTA",
+            "consecutiveZeroDeltaCycles": zero_delta,
+            "threshold": _G8_MAX_ZERO_DELTA_CYCLES,
+        }
+
+    window = state.get("compileFailRateWindow") or []
+    if isinstance(window, list) and window:
+        try:
+            latest = float(window[-1])
+        except (TypeError, ValueError):
+            latest = 0.0
+        if latest > _G8_MAX_COMPILE_FAIL_RATE:
+            return {
+                "status": "FAIL",
+                "blockedReason": "G8_COMPILE_FAIL_RATE",
+                "latestRate": latest,
+                "threshold": _G8_MAX_COMPILE_FAIL_RATE,
+            }
+    return {
+        "status": "PASS",
+        "consecutiveZeroDeltaCycles": zero_delta,
+        "compileFailRateLatest": (float(window[-1]) if window else 0.0),
+    }
+
+
+def _try_auto_repair(state_dir: Path, test_file: Path) -> dict:
+    """Invoke repair_dispatch.py and return a compact report.
+
+    Bridges G6 (linter) with phase 10a (deterministic repair). When G6 fails,
+    the violations land in state/linter-violations.json — exactly what
+    repair_dispatch consumes. Anything the dispatcher cannot handle is
+    surfaced as `escalated` so the caller can pass it to the LLM repair-agent.
+    """
+    dispatcher = HERE / "repair_dispatch.py"
+    if not dispatcher.exists():
+        return {"available": False, "reason": "repair_dispatch.py missing"}
+    whitelist = state_dir / "import-whitelist.json"
+    cmd = [
+        sys.executable, str(dispatcher),
+        "--state", str(state_dir),
+        "--test-file", str(test_file),
+    ]
+    if whitelist.exists():
+        cmd += ["--whitelist", str(whitelist)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    out: dict = {"available": True, "exitCode": proc.returncode}
+    report_path = state_dir / "_summaries" / "repair-dispatch.json"
+    if report_path.exists():
+        try:
+            with report_path.open("r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            counts = payload.get("counts", {})
+            out["repaired"] = counts.get("repaired", 0)
+            out["escalated"] = counts.get("escalated", 0)
+            out["skipped"] = counts.get("skipped", 0)
+            out["reportPath"] = str(report_path)
+        except (OSError, json.JSONDecodeError) as exc:
+            out["reportError"] = f"{exc.__class__.__name__}: {exc}"
+    return out
+
+
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -406,6 +501,16 @@ def main() -> int:
         help="Path to the context-pack JSON (full or compact).",
     )
     ap.add_argument("--test-file", default=None, help="Path to the Java test file for G6.")
+    ap.add_argument(
+        "--auto-repair",
+        action="store_true",
+        help=(
+            "When G6 fails, invoke repair_dispatch.py to apply deterministic "
+            "rules (10a) before reporting failure. Only violations the "
+            "dispatcher escalates remain in G6's blockedReason — everything "
+            "else is auto-fixed and G6 re-runs."
+        ),
+    )
     ap.add_argument(
         "--repair-attempt",
         action="append",
@@ -442,11 +547,18 @@ def main() -> int:
     gates["G4"] = {"status": "NOT_IMPLEMENTED", "reason": _NOT_IMPLEMENTED["G4"]}
     gates["G5"] = gate_g5(pack)
     gates["G6"] = gate_g6(state_dir, test_file)
+    if args.auto_repair and gates["G6"].get("status") == "FAIL" and test_file is not None:
+        dispatch_report = _try_auto_repair(state_dir, test_file)
+        gates["G6"]["autoRepair"] = dispatch_report
+        # Re-run G6 if dispatch actually changed the file.
+        if dispatch_report.get("repaired"):
+            gates["G6"] = gate_g6(state_dir, test_file)
+            gates["G6"]["autoRepair"] = dispatch_report
     gates["G7"] = gate_g7(patch, state_dir, cli_attempts)
-    gates["G8"] = {"status": "NOT_IMPLEMENTED", "reason": _NOT_IMPLEMENTED["G8"]}
+    gates["G8"] = gate_g8(state_dir)
 
     blocked_reason: str | None = None
-    for key in ("G1", "G5", "G6", "G7"):
+    for key in ("G1", "G5", "G6", "G7", "G8"):
         g = gates.get(key, {})
         if g.get("status") == "FAIL":
             blocked_reason = g.get("blockedReason") or f"{key}_FAIL"

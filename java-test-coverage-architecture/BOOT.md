@@ -74,16 +74,35 @@ python tools/python/run_pipeline.py \
 > los outputs se escriben en un directorio hermano del repo de la arquitectura. Sobrescribible
 > con `-StateDir` / `--out` para apuntar a cualquier ubicación.
 
-### Salidas obligatorias
+### Salidas obligatorias (lista canónica enforced por `validate_handoff.py`)
+
+Archivos JSON (no-vacíos):
 
 - `state/build-tool-contract.json`
 - `state/archetype-profile.json`
 - `state/generated-code-index.json`
 - `state/import-whitelist.json`
-- `state/symbol-contracts/<fqcn>.json` (uno por SUT)
-- `state/coverage-targets.json` (si hay `jacoco.xml`)
+- `state/stack-profile.json`
+- `state/classification-index.json`
+- `state/dependency-graph.json`
+- `state/fixture-catalog.json`
+- `state/batch-plan.json`
 
-**Si cualquiera de estos JSON falta o no valida contra su schema ⇒ abortar con `BLOCKED_PRE_STAGE_MISSING`.** Los agentes nunca leen POMs, classpath crudo, `javap` ni `jacoco.xml` directamente: consumen solo los JSON.
+Directorios con al menos una entrada `*.json`:
+
+- `state/symbol-contracts/`
+- `state/context-packs-compact/`
+
+Opcionales (si aplica):
+
+- `state/coverage-targets.json` (cuando hay baseline JaCoCo)
+
+`validate_handoff.py` corre tres chequeos: (a) presencia + tamaño>0 → si falla
+emite `BLOCKED_PRE_STAGE_MISSING`; (b) cada JSON valida contra su schema en
+`state/_schemas/` → si falla emite `BLOCKED_PRE_STAGE_INVALID`; (c) emite
+`state/_summaries/handoff-summary.json` con los facts derivados. Los agentes
+nunca leen POMs, classpath crudo, `javap` ni `jacoco.xml` directamente: consumen
+sólo el handoff-summary + el context-pack compacto del SUT activo.
 
 > Los outputs **no viven dentro del repo**. Por default se escriben en `../.agent-state/`
 > (sibling del repo de la arquitectura), creado por `run_pipeline.py` en el primer ciclo
@@ -91,6 +110,21 @@ python tools/python/run_pipeline.py \
 > son los schemas (`state/_schemas/`). Ver `.gitignore`.
 
 ---
+
+## Recuperación de fallos
+
+Si una corrida se interrumpe (proceso killed, error de I/O, validador retorna
+`BLOCKED_*`), el protocolo de recuperación vive en
+[`skills/00-runtime/04-state-and-recovery.md`](skills/00-runtime/04-state-and-recovery.md).
+Resumen operativo:
+
+- `state/execution-state.json` registra `lastGoodCheckpoint` (cycle/phase) y
+  los hashes SHA-256 vigentes.
+- Para rebotar desde el último checkpoint sano: re-correr `run_pipeline.py`
+  (idempotente; las herramientas reusan caches en `state/_cache/`).
+- Para reset duro: borrar la carpeta hermana `../.agent-state/` y re-correr
+  Phase 0. Los schemas (`state/_schemas/`) viven dentro del repo y nunca se
+  borran.
 
 ## Reglas duras
 

@@ -2,6 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "symbol-contract.schema.json",
   "type": "object",
+  "definitions": {
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+    }
+  },
   "required": ["schemaVersion", "fqcn", "kind", "instantiation"],
   "properties": {
     "schemaVersion": { "const": 1 },
@@ -27,7 +33,7 @@
         "type": "object",
         "required": ["evidenceId", "visibility", "params"],
         "properties": {
-          "evidenceId": { "type": "string" },
+          "evidenceId": { "$ref": "#/definitions/evidenceId" },
           "visibility": { "enum": ["public", "protected", "package", "private"] },
           "params": {
             "type": "array",
@@ -52,7 +58,7 @@
         "type": "object",
         "required": ["evidenceId", "name", "returnType", "params", "usable"],
         "properties": {
-          "evidenceId": { "type": "string" },
+          "evidenceId": { "$ref": "#/definitions/evidenceId" },
           "name": { "type": "string" },
           "modifiers": { "type": "array", "items": { "type": "string" } },
           "returnType": { "type": "string" },
@@ -87,7 +93,7 @@
         "type": "object",
         "required": ["evidenceId", "kind", "entry", "build", "setters"],
         "properties": {
-          "evidenceId": { "type": "string" },
+          "evidenceId": { "$ref": "#/definitions/evidenceId" },
           "kind": { "enum": ["lombok", "freebuilder", "immutables", "autovalue", "manual"] },
           "entry": { "type": "string" },
           "build": { "type": "string" },

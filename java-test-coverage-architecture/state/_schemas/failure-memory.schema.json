@@ -11,7 +11,7 @@
         "type": "object",
         "required": ["hash", "errorCode", "symbolFQN", "fixId", "attempts", "lastResult"],
         "properties": {
-          "hash": { "type": "string" },
+          "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256(errorCode + '|' + symbolFQN + '|' + fixId) — 64 hex chars" },
           "errorCode": { "type": "string" },
           "symbolFQN": { "type": "string" },
           "fixId": { "type": "string" },

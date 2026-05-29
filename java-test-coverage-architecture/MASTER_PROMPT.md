@@ -119,43 +119,36 @@ Prohibido derivar contratos de regex sobre `.java`. Prohibido derivar contratos 
 
 ## Flujo de ejecución
 
-> **Post-audit 2026-05-28**: Las fases 1-7 (Discovery → Planning) fueron
-> colapsadas en una **única validación Python**, `validate_handoff.py`. El
-> agente LLM **no ejecuta esas fases como turnos separados** — corre el
-> validator una vez al arrancar y consume solo el `handoff-summary.json`
-> resultante. Las secciones 1-7 siguen documentadas abajo como referencia
-> de qué Python tool produce cada artefacto, pero ninguna requiere un turno
-> del LLM.
+> **Post-audit 2026-05-28**: Las fases 1-7 (Discovery → Planning) están
+> **colapsadas en una única validación Python**, `validate_handoff.py`. El
+> LLM **no las ejecuta como turnos separados**: corre el validator una vez
+> al arrancar y consume sólo `state/_summaries/handoff-summary.json` +
+> `state/context-packs-compact/<safe_fqcn>.json` por SUT. **Prohibido**
+> volver a leer los nueve JSONs originales.
 
-### 1. Discovery
-Lectura de `state/build-tool-contract.json`, `state/archetype-profile.json` y `state/generated-code-index.json` ya producidos por el pre-stage Python. El agente Discovery solo agrega contexto cualitativo (tests existentes, convenciones detectadas). Si los JSON no existen, abortar con `BLOCKED_PRE_STAGE_MISSING`.
+### Reference 1-7 — outputs Python (no LLM turn)
+
+Las secciones siguientes documentan **qué Python tool produce qué artefacto**
+y dónde aparece en `handoff-summary.json`. No describen turnos del agente.
+
+| #   | Phase           | Productor (Python)                          | Artefacto                                | Campo en handoff-summary       |
+|-----|-----------------|---------------------------------------------|------------------------------------------|--------------------------------|
+| 1   | Discovery       | `pom_parser.py` + `archetype_detector.py` + `generated_code_scanner.py` | `build-tool-contract.json`, `archetype-profile.json`, `generated-code-index.json` | `buildTool`, `archetype` |
+| 2   | Stack Profile   | `stack_profile_detector.py`                 | `stack-profile.json`                     | `stack`                        |
+| 3   | Classification  | `classification_analyzer.py`                | `classification-index.json`              | `classification`               |
+| 4   | Symbol Contract | `bytecode_scanner.py` + `source_symbol_enricher.py` | `symbol-contracts/<fqcn>.json` + `import-whitelist.json` | `counts.symbolContracts` |
+| 5   | Dependency Graph| `dependency_graph_extractor.py`             | `dependency-graph.json`                  | `counts.dependencyGraphs`      |
+| 6   | Fixture Catalog | `fixture_catalog_builder.py`                | `fixture-catalog.json`                   | `counts.fixtures`              |
+| 7   | Planning        | `coverage_planner.py`                       | `batch-plan.json`                        | `batchPlan`                    |
 
 **Archetype-aware (BGBA)**: ver `docs/archetype-policy.md` y `skills/01-discovery/archetype-detection.md`.
-- `bgba-parent-paas-java-21` ⇒ namespace `jakarta`, JaCoCo heredado (no agregar plugin), JUnit 5.
-- `bgba-parent-paas-java-8` ⇒ namespace `javax`, JaCoCo CLI bootstrap (sin tocar POM).
+- `bgba-parent-paas-java-21` ⇒ namespace `jakarta`, JaCoCo heredado, JUnit 5.
+- `bgba-parent-paas-java-8` ⇒ namespace `javax`, JaCoCo CLI bootstrap.
 - `bgba-parent-pom` ⇒ reglas comunes.
 
-**Generated code**: clases bajo `target/generated-sources/**`, paquetes declarados en `cxf-codegen-plugin` (WSDL) o `openapi-generator-maven-plugin` (`apiPackage`/`modelPackage`) **no** son SUT. Se usan solo como tipos auxiliares previa validación contra `generated-code-index.json`. Ver `skills/01-discovery/generated-code-exclusion.md`.
+**Generated code**: clases bajo `target/generated-sources/**` y paquetes declarados en `cxf-codegen-plugin` / `openapi-generator-maven-plugin` no son SUT. Se usan como tipos auxiliares previa validación contra `generated-code-index.json`.
 
 **JaCoCo bootstrap**: ver `skills/01-discovery/jacoco-bootstrap.md`. Nunca modificar POM salvo autorización explícita.
-
-### 2. Stack Profile
-Detectar versiones exactas y dirigir presets: JUnit 4/5, Mockito 2/3/4/5, AssertJ, Hamcrest, Spring/Spring Boot Test, Testcontainers, Lombok, FreeBuilder, MapStruct, Immutables, AutoValue.
-
-### 3. Classification
-Leer `state/classification-index.json` producido por `tools/python/classification_analyzer.py`. No re-clasificar — el agente consume la clasificación como dato de entrada.
-
-### 4. Symbol Contract
-Generar un contrato por SUT en `state/symbol-contracts/<fqcn>.json` con `evidence-id` por símbolo. Construir además `state/import-whitelist.json` con todos los paquetes/clases admisibles (classpath + JDK + source roots + generated sources).
-
-### 5. Dependency Graph
-Leer `state/dependency-graph.json` producido por `tools/python/dependency_graph_extractor.py`. No re-mapear dependencias — el agente consume el grafo como dato de entrada.
-
-### 6. Fixture Catalog
-Leer `state/fixture-catalog.json` producido por `tools/python/fixture_catalog_builder.py`. No re-generar el catálogo — el agente consume los fixtures verificados como dato de entrada.
-
-### 7. Planning
-Leer `state/batch-plan.json` producido por `tools/python/coverage_planner.py`. No re-planificar — el agente consume el plan como dato de entrada. El planner ya cruzó JaCoCo XML con la clasificación y priorizó por modo (`coverage`, `branch-coverage`, `mutation-hardening`).
 
 ### 8. Generation
 Consumir `state/context-packs/<fqcn>.json` producido por `tools/python/context_pack_builder.py` y generar el patch descriptor JSON estructurado. La generación se divide en dos agentes secuenciales:

@@ -35,21 +35,22 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import _TimedRun, atomic_write_json, load_json  # noqa: E402
+from common import _TimedRun, atomic_write_json, load_json, validate  # noqa: E402
 
 
 # Required artefacts produced by Phase 0. Missing any of these blocks the
-# handoff with status="BLOCKED_PRE_STAGE_MISSING".
-_REQUIRED_FILES: tuple[str, ...] = (
-    "build-tool-contract.json",
-    "archetype-profile.json",
-    "generated-code-index.json",
-    "import-whitelist.json",
-    "stack-profile.json",
-    "classification-index.json",
-    "dependency-graph.json",
-    "fixture-catalog.json",
-    "batch-plan.json",
+# handoff with status="BLOCKED_PRE_STAGE_MISSING"; an invalid one blocks with
+# status="BLOCKED_PRE_STAGE_INVALID". The schema name is the file stem.
+_REQUIRED_FILES: tuple[tuple[str, str], ...] = (
+    ("build-tool-contract.json", "build-tool-contract"),
+    ("archetype-profile.json",   "archetype-profile"),
+    ("generated-code-index.json", "generated-code-index"),
+    ("import-whitelist.json",    "import-whitelist"),
+    ("stack-profile.json",       "stack-profile"),
+    ("classification-index.json", "classification-index"),
+    ("dependency-graph.json",    "dependency-graph"),
+    ("fixture-catalog.json",     "fixture-catalog"),
+    ("batch-plan.json",          "batch-plan"),
 )
 
 # Required directories with at least one entry.
@@ -62,7 +63,7 @@ _REQUIRED_DIRS: tuple[str, ...] = (
 def _check_required(state_dir: Path) -> list[str]:
     """Return a list of missing artefact descriptions (empty = all present)."""
     missing: list[str] = []
-    for name in _REQUIRED_FILES:
+    for name, _schema in _REQUIRED_FILES:
         p = state_dir / name
         if not p.exists() or p.stat().st_size == 0:
             missing.append(f"file: {name}")
@@ -74,6 +75,47 @@ def _check_required(state_dir: Path) -> list[str]:
         if not any(d.glob("*.json")):
             missing.append(f"dir: {dname}/ (empty)")
     return missing
+
+
+def _validate_required(state_dir: Path) -> list[str]:
+    """Run each Phase-0 artefact through its JSON Schema. Returns a list of
+    error strings (empty = all valid). A handoff that loads but does not
+    validate is just as broken as a missing file — block it with the same
+    rigour."""
+    errors: list[str] = []
+    for fname, schema_name in _REQUIRED_FILES:
+        p = state_dir / fname
+        try:
+            doc = load_json(p)
+        except Exception as e:
+            errors.append(f"{fname}: cannot parse JSON ({e.__class__.__name__})")
+            continue
+        try:
+            validate(schema_name, doc)
+        except Exception as e:
+            # jsonschema.ValidationError has a useful str() — keep it short.
+            msg = str(e).splitlines()[0][:200]
+            errors.append(f"{fname}: schema violation: {msg}")
+    # Spot-check a sample of per-SUT artefacts so a malformed contract does
+    # not slip through. Validate the first contract and the first compact pack;
+    # if either is broken every downstream consumer is broken too.
+    contracts_dir = state_dir / "symbol-contracts"
+    if contracts_dir.exists():
+        sample = next(iter(sorted(contracts_dir.glob("*.json"))), None)
+        if sample is not None:
+            try:
+                validate("symbol-contract", load_json(sample))
+            except Exception as e:
+                errors.append(f"symbol-contracts/{sample.name}: {str(e).splitlines()[0][:200]}")
+    packs_dir = state_dir / "context-packs-compact"
+    if packs_dir.exists():
+        sample = next(iter(sorted(packs_dir.glob("*.json"))), None)
+        if sample is not None:
+            try:
+                validate("protocols/context-pack-compact", load_json(sample))
+            except Exception as e:
+                errors.append(f"context-packs-compact/{sample.name}: {str(e).splitlines()[0][:200]}")
+    return errors
 
 
 def _safe_load(p: Path) -> dict:
@@ -234,6 +276,23 @@ def main() -> int:
             "phase": "PRE_GENERATION",
             "status": "BLOCKED_PRE_STAGE_MISSING",
             "missing": missing,
+        }
+        out_path = state_dir / "_summaries" / "handoff-summary.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(out_path, payload)
+        return 2
+
+    invalid = _validate_required(state_dir)
+    if invalid:
+        print("[BLOCKED] BLOCKED_PRE_STAGE_INVALID", file=sys.stderr)
+        for m in invalid:
+            print(f"  - {m}", file=sys.stderr)
+        payload = {
+            "schemaVersion": 1,
+            "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "phase": "PRE_GENERATION",
+            "status": "BLOCKED_PRE_STAGE_INVALID",
+            "invalid": invalid,
         }
         out_path = state_dir / "_summaries" / "handoff-summary.json"
         out_path.parent.mkdir(parents=True, exist_ok=True)

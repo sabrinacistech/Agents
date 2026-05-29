@@ -6,6 +6,15 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "runId": { "type": "string" },
+    "format": { "type": "string" },
+    "truncated": {
+      "type": "object",
+      "required": ["total", "kept"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "kept":  { "type": "integer", "minimum": 0 }
+      }
+    },
     "errors": {
       "type": "array",
       "maxItems": 200,

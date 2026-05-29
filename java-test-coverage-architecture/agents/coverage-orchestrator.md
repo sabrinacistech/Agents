@@ -29,10 +29,35 @@ Coordinar el flujo completo, validar gates G1–G8 entre fases y mantener `state
    - `symbol-contracts/<sut>.json` para cada SUT del batch,
    - `fixture-catalog.json` con fixtures para los tipos requeridos.
 3. Antes de compilar, exigir G1 (whitelist) y G6 (static pre-compile linter) sobre cada test propuesto.
-4. Antes de despachar a `repair-agent`, invocar `gate_runner.py --patch <patch> --context-pack <pack> --state state/` que evalúa G7 (failure-memory) y devuelve `BLOCKED` si `(errorCode, symbolFQN, fixId)` ya falló ≥ 2 ciclos o el `testCaseId` supera 3 intentos. **El LLM nunca cuenta intentos** — esa es responsabilidad del driver Python (`_G7_MAX_FAILED_ATTEMPTS`, `_G7_MAX_TESTCASE_ATTEMPTS` en `gate_runner.py`).
-5. Tras cada ciclo, evaluar G8 (convergencia).
-6. Escritura atómica en `state/` (`*.tmp` + rename); actualizar `checkpoints[]` con SHA-256.
-7. Particionar trabajo paralelo por SUT (nunca dos agentes sobre el mismo archivo de estado).
+4. Antes de despachar a `repair-agent`, invocar
+   `gate_runner.py --patch <patch> --context-pack <pack> --state state/ --auto-repair --test-file <FooTest.java>`.
+   El gate runner evalúa G1/G5/G6/G7/G8 y, con `--auto-repair`, si G6 falla
+   invoca primero `repair_dispatch.py` (etapa 10a determinista,
+   `repair-rules/*.rules`) y re-corre G6. Sólo las violaciones que el
+   dispatcher escala (`_escalateReason`) se le pasan al `repair-agent` LLM
+   (etapa 10b). **El LLM nunca cuenta intentos** ni decide cuándo escalar —
+   thresholds canónicos en `_G7_MAX_FAILED_ATTEMPTS`,
+   `_G7_MAX_TESTCASE_ATTEMPTS`, `_G8_MAX_ZERO_DELTA_CYCLES`,
+   `_G8_MAX_COMPILE_FAIL_RATE` dentro de `gate_runner.py`.
+5. Envolver cada ciclo en `cycle_runner.py` para que el budget
+   (`maxCycles`, `maxMinutesPerCycle` de `execution-state.json`) se aplique
+   **por construcción**:
+   ```bash
+   python tools/python/cycle_runner.py \
+       --state state/execution-state.json \
+       -- python tools/python/gate_runner.py --state state/ \
+           --patch state/_patches/<...>.patch.json \
+           --context-pack state/context-packs-compact/<...>.json \
+           --test-file <repo>/src/test/java/<...>Test.java \
+           --auto-repair
+   ```
+   `cycle_runner` llama `budget_enforcer.py check` (abort si excedido),
+   `tick` (incrementa cycle + estampa inicio) y `reset` al finalizar (incluso
+   si el comando interno crashea).
+6. Escritura atómica en `state/` (`*.tmp` + rename); actualizar
+   `checkpoints[]` con SHA-256.
+7. Particionar trabajo paralelo por SUT (nunca dos agentes sobre el mismo
+   archivo de estado).
 
 ## Compresión de historial de ciclos (Phase 5)
 
@@ -57,8 +82,8 @@ Patches en `state/_patches/` son escritos por `tools/python/ast_patcher.py` ante
 modificar cada test. Si la validación falla: `ast_patcher.py --rollback <diff>`.
 
 ## Criterios de parada
-- G8 activado.
-- `budget.maxCycles` alcanzado.
+- G8 activado (delta=0 dos ciclos seguidos, o compile-fail-rate > 0.5).
+- `cycle_runner` retorna rc=2 (BUDGET_EXCEEDED de `budget_enforcer`).
 - Objetivo de cobertura del modo alcanzado.
 - Aborto manual.
 
@@ -91,7 +116,8 @@ orquestador invoca las herramientas; no hay agente LLM intermedio.
 | Pre-compile lint     | `gate_runner.py` → `test_linter.py` (G6-quality ON por default) | `state/linter-violations.json` (violaciones G1/G2/G5/G6-quality estructuradas) + `state/_summaries/gates.json` |
 | Narrow validation    | `narrow_test_runner.py` + `compile_error_parser.py` | `state/_summaries/build-output.log` + `state/compile-error-index.json` + `state/coverage-delta.json` |
 | Mutation hardening   | `mutation_runner.py` (sólo `--coverage-mode mutation-hardening`) | `state/mutation-intelligence.json` |
-| Repair (LLM)         | `repair-agent`                    | Consume el subset escalado de `state/linter-violations.json` + `state/compile-error-index.json` (el driver ya intentó `repair-rules/quality.rules` y los otros `*.rules` determinísticamente) → nuevo patch JSON |
+| Repair (deterministic, 10a) | `repair_dispatch.py` (auto-invocado por `gate_runner.py --auto-repair`) | Aplica `repair-rules/*.rules` con `ast_patcher.py` y emite `state/_summaries/repair-dispatch.json` (counts: repaired, escalated, skipped) |
+| Repair (LLM, 10b)    | `repair-agent`                    | Consume sólo `escalated[]` del repair-dispatch → nuevo patch JSON |
 | Cycle reporting      | `cycle_report_builder.py`         | `state/_summaries/cycle-<N>-report.json` (summary, sutReports, gateStatus, recommendations) |
 | Cycle summary        | `cycle_summarizer.py`             | `state/_summaries/cycle-<N>.json`                                |
 

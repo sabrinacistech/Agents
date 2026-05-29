@@ -4,6 +4,12 @@
   "title": "Context Pack — Compact LLM-bound form",
   "description": "Minified, token-optimised projection of context-pack.schema.json. Lives in state/context-packs-compact/<fqcn>.json. Planner-only fields are stripped. forbidden[] is omitted because enforcement lives in system prompt + gate_runner + patcher + linter.",
   "type": "object",
+  "definitions": {
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+    }
+  },
   "required": ["v", "sut", "m", "stk", "cov", "ctor", "meth", "deps", "fx", "imp", "eid"],
   "additionalProperties": false,
   "properties": {
@@ -74,7 +80,7 @@
     "eid": {
       "type": "array",
       "description": "Evidence id pool referenced by ctor[*][0] and meth[*][0].",
-      "items": { "type": "string" }
+      "items": { "$ref": "#/definitions/evidenceId" }
     },
     "tr": {
       "type": "array",

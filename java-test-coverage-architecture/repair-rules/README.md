@@ -20,17 +20,42 @@ Cada línea no-comentario es una regla:
 <errorPattern> => <action>(<args>)
 ```
 
-Donde `errorPattern` matchea contra `state/compile-error-index.json[*].code|message`
-y `action` está en el set:
+Donde `errorPattern` matchea contra `state/compile-error-index.json[*].code|message`.
+
+### Actions
+
+Sólo las del primer bloque son determinísticas hoy
+(`tools/python/repair_dispatch.py:_AST_PATCHER_ACTIONS`). El resto se escala al
+`repair-agent` LLM con el `_escalateReason` = nombre de la acción. Las dejamos
+declaradas en los `.rules` para que el día que se implementen en `ast_patcher.py`
+el cambio sea drop-in (un agregado al set, cero cambios en los `.rules`).
+
+**Implementadas (fast-path determinístico):**
 
 - `addImport(<fqn>)`
 - `removeImport(<fqn>)`
-- `addAnnotation(<target>, <fqn>)`
-- `wrapWith(lenient)` — para Mockito strict stubbing.
+- `insertAaaComments(<scope>)`
+- `removeUnusedStub(<symbol>)`
+- `convertMockSutToInjectMocks(<symbol>)`
+
+**Declaradas pero escaladas al LLM (TODO: portar a `ast_patcher.py`):**
+
+- `wrapWith(lenient)` — Mockito strict stubbing.
+- `useMockMaker(<maker>)`
+- `normalizeMatchers()`
 - `replaceCall(<from>, <to>)`
 - `addMockBean(<type>)`
 - `useBuilder(<fqn>)`
-- `escalateToLLM(<reason>)` — fallback explícito.
+- `addAnnotation(<target>, <fqn>)`
+- `setBuilderRequiredFields(...)`
+- `triggerAnnotationProcessing()`
+- `applyInstantiationStrategy(<type>)`
+- `replaceWithContractMethod(<type>, <method>)`
+- `replaceWithDeclaredBuilderOrBlock(<type>)`
+
+**Fallback explícito:**
+
+- `escalateToLLM(<reason>)` — usar este cuando el caso requiere juicio.
 
 ## Pipeline de repair
 

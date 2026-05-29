@@ -3,6 +3,12 @@
   "$id": "generated-tests.schema.json",
   "description": "Tests propuestos en el ciclo actual — escrito por test-body-agent (vía test_patch_applier.py), leído por reporting-agent y cycle_summarizer.",
   "type": "object",
+  "definitions": {
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^(sym|ctor|builder):[A-Za-z0-9_.$#<>]+:[0-9a-f]{8}$"
+    }
+  },
   "required": ["schemaVersion", "tests"],
   "properties": {
     "schemaVersion": { "const": 1 },
@@ -15,7 +21,7 @@
         "properties": {
           "testClass":   { "type": "string" },
           "sut":         { "type": "string" },
-          "evidenceIds": { "type": "array", "items": { "type": "string" } },
+          "evidenceIds": { "type": "array", "items": { "$ref": "#/definitions/evidenceId" } },
           "status":      { "enum": ["PROPOSED", "VALIDATED", "DISCARDED", "COMMITTED"] },
           "reason":      { "type": "string" },
           "patchId":     { "type": "string" }
