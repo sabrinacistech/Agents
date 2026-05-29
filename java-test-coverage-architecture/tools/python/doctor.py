@@ -116,7 +116,11 @@ def run_checks(repo: Path, state: Path) -> list[dict]:
     checks.append(_check_maven_tool())
     checks.append(_check_repo_pom(repo))
     checks.append(_check_target_classes(repo))
-    schemas_dir = state / "_schemas"
+    # Schemas live INSIDE the architecture repo (not in the user-writable
+    # state dir). They are part of the architecture's contract, not generated
+    # output — resolved via package-relative path, same as common.SCHEMAS_DIR.
+    from common import SCHEMAS_DIR
+    schemas_dir = SCHEMAS_DIR
     checks.append(
         _check_dir_populated("state:_schemas", schemas_dir, "*.schema.json")
     )

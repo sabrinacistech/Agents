@@ -18,8 +18,9 @@
     Default: C:\repo\multi-clusters\cluster-status-service
 
 .PARAMETER StateDir
-    Directory where all state JSON files are written.
-    Default: <AgentsRoot>\java-test-coverage-architecture\state
+    Directory where all state JSON files are written. Lives OUTSIDE the
+    architecture repo so generated artifacts never pollute the codebase.
+    Default: <AgentsRoot>\.agent-state
 
 .PARAMETER Module
     Maven module name for bytecode scanning. Use '.' for monolithic repos (default).
@@ -110,7 +111,7 @@ $ToolsDir = Join-Path $AgentsRoot "java-test-coverage-architecture\tools\python"
 $PipelineScript = Join-Path $ToolsDir "run_pipeline.py"
 
 if ($StateDir -eq "") {
-    $StateDir = Join-Path $AgentsRoot "java-test-coverage-architecture\state"
+    $StateDir = Join-Path $AgentsRoot ".agent-state"
 }
 
 $Repo = (Resolve-Path $Repo -ErrorAction Stop).ProviderPath

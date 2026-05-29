@@ -74,8 +74,8 @@ Todo lo que es **parseable** (POM, classpath, bytecode, JaCoCo XML, log de Maven
 
 ## Caching y reuso
 
-- Cada script de Python escribe `state/_cache/<name>.cache.json` con `{ "inputs": { "<file>": "<sha256>" }, "output": ... }`.
-- Si el hash de las entradas coincide, no recomputa. Para reset completo: `rm -rf state/_cache`.
+- Cada script de Python escribe `<state-dir>/_cache/<name>.cache.json` con `{ "inputs": { "<file>": "<sha256>" }, "output": ... }`.
+- Si el hash de las entradas coincide, no recomputa. Para reset completo: `rm -rf <state-dir>/_cache` (por default, `../.agent-state/_cache/` desde el repo de la arquitectura).
 
 ## Cuándo recorrer todo
 

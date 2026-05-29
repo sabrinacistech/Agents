@@ -92,8 +92,12 @@ def main() -> int:
     ap.add_argument("--repo", required=True, help="Root of the Java repository.")
     ap.add_argument(
         "--out",
-        default="state",
-        help="State directory (default: state).",
+        default=None,
+        help=(
+            "State directory for generated artifacts. Defaults to "
+            "<architecture-repo>/../.agent-state — a sibling folder that "
+            "keeps generated state out of the architecture repo."
+        ),
     )
     ap.add_argument("--module", default=None, help="Override inferred module name.")
     ap.add_argument(
@@ -124,7 +128,12 @@ def main() -> int:
         print(f"[FAIL] No pom.xml found at {repo}", file=sys.stderr)
         return 2
 
-    state_path = Path(args.out).resolve()
+    if args.out is None:
+        # Default: sibling of the architecture repo (one level up from tools/python/../..).
+        arch_root = Path(__file__).resolve().parents[2]
+        state_path = (arch_root.parent / ".agent-state").resolve()
+    else:
+        state_path = Path(args.out).resolve()
 
     group_id = _read_group_id(repo / "pom.xml")
     include_fqcn = args.include_fqcn or _infer_include_fqcn(group_id)

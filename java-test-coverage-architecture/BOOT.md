@@ -63,12 +63,16 @@ Si necesitás controlar los parámetros explícitamente:
 mvn -q -DskipTests package          # desde el repo Java
 python tools/python/run_pipeline.py \
   --repo         <ruta-al-repo-java> \
-  --out          state \
+  --out          ../.agent-state \
   --module       <module> \
   --include-fqcn '<regex>' \
   --jacoco-xml   <ruta-al-repo-java>/target/site/jacoco/jacoco.xml \
   --coverage-mode <coverage|branch-coverage|mutation-hardening>
 ```
+
+> `../.agent-state` es el default cuando se ejecuta vía `run_agents.ps1` o `bootstrap.py`:
+> los outputs se escriben en un directorio hermano del repo de la arquitectura. Sobrescribible
+> con `-StateDir` / `--out` para apuntar a cualquier ubicación.
 
 ### Salidas obligatorias
 
@@ -81,7 +85,10 @@ python tools/python/run_pipeline.py \
 
 **Si cualquiera de estos JSON falta o no valida contra su schema ⇒ abortar con `BLOCKED_PRE_STAGE_MISSING`.** Los agentes nunca leen POMs, classpath crudo, `javap` ni `jacoco.xml` directamente: consumen solo los JSON.
 
-> Los `state/*.json` **no se versionan**. El directorio queda con un `.gitkeep` y los esquemas en `state/_schemas/`. `run_pipeline.py` los crea (escritura atómica `*.tmp` + rename) en el primer ciclo. Ver `.gitignore`.
+> Los outputs **no viven dentro del repo**. Por default se escriben en `../.agent-state/`
+> (sibling del repo de la arquitectura), creado por `run_pipeline.py` en el primer ciclo
+> con escritura atómica (`*.tmp` + rename). Lo único que persiste versionado bajo `state/`
+> son los schemas (`state/_schemas/`). Ver `.gitignore`.
 
 ---
 
@@ -118,7 +125,7 @@ ya no las ejecuta como turnos separados — solo lee el resumen que produce.
 **Comando obligatorio antes de Generation**:
 
 ```bash
-python tools/python/validate_handoff.py --state state/
+python tools/python/validate_handoff.py --state ../.agent-state/
 ```
 
 Si la salida es `BLOCKED_PRE_STAGE_MISSING`, abortar y reportar

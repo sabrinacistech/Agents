@@ -16,3 +16,7 @@ Agents.iml
 
 # Execution folders — generated per project+date, never committed
 /java-test-coverage-architecture_execution_*/
+
+# Agent state — all pipeline outputs (JSONs, context-packs, summaries, cache).
+# Lives as a sibling of the architecture repo. Never versioned.
+/.agent-state/

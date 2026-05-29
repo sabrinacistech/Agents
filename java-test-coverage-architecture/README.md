@@ -19,12 +19,16 @@ discovery → stack-profile → classification → symbol-contract
 ```text
 agents/              Agentes por fase (orchestrator, test-intent, test-body, repair, reporting, ...)
 skills/              Procedimientos accionables por dominio
-state/               Estados JSON persistentes
-state/_schemas/      JSON Schemas Draft-07 (validación obligatoria)
+state/_schemas/      JSON Schemas Draft-07 (validación obligatoria) — único contenido versionado bajo state/
 docs/                Notas de arquitectura y políticas
 tools/python/        Pre-stage determinista (parsea POM/classpath/javap/JaCoCo)
 MASTER_PROMPT.md     Prompt principal con gates G1–G8
 ```
+
+Los **artefactos generados** (JSONs deterministas, context-packs, summaries, patches, caches)
+se escriben en `../.agent-state/` — un directorio hermano del repo, fuera del árbol versionado.
+Esta separación garantiza que el repo solo contenga código y contratos (schemas), nunca outputs
+de ejecución. El path se sobrescribe vía `--out` (Python) o `-StateDir` (`run_agents.ps1`).
 
 ## Pre-stage Python (obligatorio)
 
@@ -34,7 +38,7 @@ Antes de cualquier ciclo LLM, correr el pipeline determinista que produce todos 
 mvn -q -DskipTests package
 python tools/python/run_pipeline.py \
    --repo . \
-   --out docs/agents/java-test-coverage-architecture/state \
+   --out ../.agent-state \
    --module <module> \
    --include-fqcn '^com\.acme\.' \
    --jacoco-xml target/site/jacoco/jacoco.xml
@@ -69,7 +73,8 @@ CXF (`wsdl2java`), OpenAPI Generator, Lombok, FreeBuilder, MapStruct, Immutables
 
 ## Validación de estados
 
-Todos los `state/*.json` validan contra schemas en `state/_schemas/`. Escritura atómica (`*.tmp` + rename) y hashes SHA-256 en `state/execution-state.json`.
+Todos los `<state-dir>/*.json` validan contra schemas en `state/_schemas/` (dentro del repo,
+no movibles). Escritura atómica (`*.tmp` + rename) y hashes SHA-256 en `<state-dir>/execution-state.json`.
 
 ## VS Code + GitHub Copilot
 
