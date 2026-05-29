@@ -205,4 +205,4 @@ python tools/python/cycle_report_builder.py \
 
 ## Arranque
 
-Empezá por **Phase 0** (auto-detección con `bootstrap.py` o ejecución manual de `run_pipeline.py`). Luego avanzá a **Phase 1 (Discovery)** según el procedimiento.
+Empezá por **Phase 0** (auto-detección con `bootstrap.py` o ejecución manual de `run_pipeline.py`) y corré `validate_handoff.py`. Con handoff `READY`, avanzá **directo a Generation (Phase 8)**: las fases 1-7 ya las produjo el pipeline determinista y **no son turnos del LLM**.

@@ -140,6 +140,17 @@ def atomic_write_json(path: Path, data: Any) -> None:
     os.replace(tmp, path)
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write text via tmp + os.replace, same crash-safety as atomic_write_json.
+    Use for any on-disk file a half-write could corrupt (e.g. Java test files an
+    AV scan or crash could truncate mid-write on Windows)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)

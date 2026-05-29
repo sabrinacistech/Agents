@@ -26,7 +26,7 @@ import re
 import sys
 from pathlib import Path
 
-from common import load_json
+from common import atomic_write_text, load_json
 
 IMPORT_RE = re.compile(r"^\s*import\s+(?:static\s+)?([\w\.]+(?:\.\*)?)\s*;\n?", re.MULTILINE)
 PACKAGE_RE = re.compile(r"^\s*package\s+[\w\.]+\s*;\s*\n", re.MULTILINE)
@@ -308,7 +308,9 @@ def main() -> int:
         return 2
 
     if new_text != text:
-        path.write_text(new_text, encoding="utf-8")
+        # Atomic (tmp + replace): a crash/AV interruption mid-write must never
+        # leave a half-written Java test on disk (audit H-3).
+        atomic_write_text(path, new_text)
     print(json.dumps(report, indent=2))
     return 0
 

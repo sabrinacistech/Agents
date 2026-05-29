@@ -289,6 +289,22 @@ def main() -> int:
         print(f"[FAIL] state directory not found: {state_dir}", file=sys.stderr)
         return 2
 
+    # This gate's entire job is schema validation. common.validate() silently
+    # no-ops when jsonschema is not importable, which would make
+    # BLOCKED_PRE_STAGE_INVALID impossible to raise and certify a handoff that
+    # was never actually validated (audit M-1). Fail loudly instead of passing
+    # by omission. jsonschema is pinned in tools/python/requirements.txt.
+    try:
+        import jsonschema  # noqa: F401
+    except Exception:
+        print(
+            "[FAIL] jsonschema is not importable — schema validation would be a "
+            "silent no-op, so the handoff cannot be certified. Install deps: "
+            "pip install -r tools/python/requirements.txt",
+            file=sys.stderr,
+        )
+        return 2
+
     missing = _check_required(state_dir)
     if missing:
         print("[BLOCKED] BLOCKED_PRE_STAGE_MISSING", file=sys.stderr)

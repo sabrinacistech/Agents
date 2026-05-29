@@ -149,11 +149,25 @@ def case_no_gates_without_env_still_blocks() -> None:
         _assert("no .java written", not _target(repo).exists())
 
 
+def case_no_perimeter_blocks() -> None:
+    print("== gates ON but no --context-pack/--whitelist blocks (H-1c) ==")
+    with tempfile.TemporaryDirectory() as td:
+        repo, state = _scaffold(Path(td))
+        # No pack, no whitelist, gates enforced: G1/G5 would be vacuous, so the
+        # patcher must refuse rather than write unverified imports.
+        proc = _run(repo, state, _patch([]))
+        out = (proc.stdout or "") + (proc.stderr or "")
+        _assert("exit 3", proc.returncode == 3, f"got {proc.returncode}: {out}")
+        _assert("G1_NO_PERIMETER reason present", "G1_NO_PERIMETER" in out, out)
+        _assert("no .java written", not _target(repo).exists())
+
+
 def main() -> int:
     case_g2_block()
     case_budget_block()
     case_no_gates_writes()
     case_no_gates_without_env_still_blocks()
+    case_no_perimeter_blocks()
     print()
     if FAILURES:
         print(f"FAILED: {len(FAILURES)} case(s): {FAILURES}")

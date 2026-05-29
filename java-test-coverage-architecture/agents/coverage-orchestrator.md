@@ -21,7 +21,12 @@ Coordinar el flujo completo, validar gates G1–G9 entre fases y mantener `state
 - Reporte final delegado a `tools/python/cycle_report_builder.py` (ex-`reporting-agent`, migrado a Python determinístico).
 
 ## Reglas
-1. Invocar fases en el orden de `skills/00-runtime/02-phase-contracts.md`.
+1. El LLM ejecuta **únicamente** los turnos Generation (Phase 8) y Repair-LLM
+   (Phase 10b). Las fases 1-7 son deterministas (Python) y llegan colapsadas en
+   `validate_handoff.py`: antes de Generation, exigir handoff `READY` y consumir
+   sólo `handoff-summary.json` + el context-pack compacto del SUT. **Prohibido**
+   re-ejecutar 1-7 como turnos LLM o re-leer los nueve JSONs originales (ver
+   `skills/00-runtime/02-phase-contracts.md` y `BOOT.md`).
 2. Antes de pasar a Generation, exigir:
    - G3 (bytecode-first si `target/classes` existe),
    - G4 (`target/generated-sources` indexado si hay APs),

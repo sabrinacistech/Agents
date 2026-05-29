@@ -742,6 +742,20 @@ def main() -> int:
                 return 3
     # ── End perimeter middleware ───────────────────────────────────────────────
 
+    # Gates ON but no authorized perimeter ⇒ G1 (import whitelist) and G5 (stack)
+    # would run against an empty pack and PASS vacuously (audit H-1c). The
+    # context-pack / whitelist is the by-construction anti-hallucination perimeter,
+    # not an optional convenience — refuse rather than write unverified imports.
+    if not gates_disabled and authorized_imports is None:
+        print(
+            "[BLOCKED] G1_NO_PERIMETER: gates are enforced but neither "
+            "--context-pack nor --whitelist was supplied; the authorized-import "
+            "perimeter is mandatory (G1/G5 would otherwise be vacuous). Pass one, "
+            f"or set {_ALLOW_NO_GATES_ENV}=1 with --no-gates for patcher unit tests.",
+            file=sys.stderr,
+        )
+        return 3
+
     # ── Gate + budget enforcement BY CONSTRUCTION (M2) ─────────────────────────
     # This is the only code path that writes Java, so the gate suite is folded
     # in here: a patch that fails the anti-hallucination gates (G1/G2/G5/G7) or

@@ -100,9 +100,10 @@ Si algo falta o falla la validación de schema, abortar y revisar. No avanzar al
    - `coverageGoal:` ajustar si querés metas distintas a 80/60.
 
 Enviar. El agente:
-1. Verifica los `state/*.json` (Phase 0).
-2. Arranca **Phase 1 - Discovery** leyendo solo JSON.
-3. Espera tu confirmación al final de cada fase la primera vez.
+1. Corre `validate_handoff.py` sobre los `state/*.json` (Phase 0 determinista).
+2. Con handoff `READY`, arranca **Generation (Phase 8)** consumiendo sólo el
+   `handoff-summary.json` + el context-pack compacto (las fases 1-7 no son turnos del LLM).
+3. Espera tu confirmación al final de cada turno LLM la primera vez.
 
 ## 5. Ciclo de revisión por fase
 

@@ -16,7 +16,11 @@ Inventariar la forma física del repo: módulos, raíces de source/test, sources
 4. Detectar `packaging` (`jar`, `war`, `pom`); módulos `pom` se ignoran como SUT.
 5. Confirmar Java vía `maven.compiler.release|source|target` o `sourceCompatibility`.
 
-## Salida (extracto de `state/discovery-summary.json`)
+## Salida (extracto ilustrativo de `state/build-tool-contract.json`)
+
+> Paso **determinista** (`pom_parser.py` + `archetype_detector.py`), no un turno
+> del LLM. El shape canónico —y validado— vive en
+> `state/_schemas/build-tool-contract.schema.json`; lo de abajo es solo ilustrativo.
 
 ```json
 {
