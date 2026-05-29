@@ -55,7 +55,7 @@ def check(state_path: Path) -> tuple[int, dict]:
     max_cycles = int(budget.get("maxCycles", DEFAULT_MAX_CYCLES))
     max_minutes = float(budget.get("maxMinutesPerCycle", DEFAULT_MAX_MINUTES_PER_CYCLE))
 
-    # `cycle` is the 1-based number of the cycle currently in progress: cycle_runner
+    # `cycle` is the 1-based number of the cycle currently in progress: cycle_loop
     # ticks it at cycle entry (tick BEFORE check), and test_patch_applier reads it
     # mid-cycle. Blocking on strictly-greater-than means cycles 1..maxCycles run and
     # the (maxCycles+1)th is refused — no off-by-one provided callers tick first.

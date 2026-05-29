@@ -1,17 +1,21 @@
-"""cycle_loop.py — deterministic owner of the generation/repair cycle loop.
+"""cycle_loop.py — the single deterministic owner of the generation/repair loop.
 
-Closes audit C1/C2 (2026-05-29). Two by-construction guarantees were actually
-by-convention:
+Closes audit C1/C2 (2026-05-29). Two "by-construction" guarantees were actually
+by-convention, because the only code that ticked the cycle counter and wrote the
+G8 signals was never wired into an executable path:
 
   C2  budget_enforcer enforced maxCycles/maxMinutesPerCycle, but nothing in the
-      real run-path ticked the cycle counter — cycle_runner (the only ticker)
-      was never invoked, so `cycle` stayed 0 and the budget never tripped.
+      real run-path ticked the cycle counter, so `cycle` stayed 0 and neither the
+      loop budget nor the test_patch_applier backstop ever tripped.
   C1  gate_runner.gate_g8 reads `consecutiveZeroDeltaCycles` and
       `compileFailRateWindow`, but NO deterministic code wrote those fields, so
       the finiteness gate could never fire unless the LLM populated them.
 
-This module owns the loop, so finiteness holds regardless of who drives
-generation. Each cycle:
+This module is now the ONE sanctioned way to run a cycle. The previous
+`cycle_runner.py` — which ticked the budget but never wrote the G8 fields nor
+evaluated G8 — was removed so there is a single owner with no competing,
+weaker path. It ticks the budget AND writes the G8 signals AND evaluates G8, so
+finiteness holds regardless of who drives generation. Each cycle:
 
   1. tick           — budget_enforcer increments `cycle` (1-based) + stamps start.
   2. budget check   — abort (rc 2) if this cycle exceeds maxCycles / minutes.

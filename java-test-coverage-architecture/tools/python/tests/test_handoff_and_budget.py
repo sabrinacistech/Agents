@@ -11,7 +11,6 @@ Run: `python tools/python/tests/test_handoff_and_budget.py`  (exits non-zero on 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -22,7 +21,6 @@ sys.path.insert(0, str(HERE.parent))
 from common import validate  # noqa: E402
 import budget_enforcer  # noqa: E402
 
-CYCLE_RUNNER = HERE.parent / "cycle_runner.py"
 FAILURES: list[str] = []
 
 
@@ -111,27 +109,6 @@ def case_budget_boundary() -> None:
             )
 
 
-def case_cycle_runner_no_off_by_one() -> None:
-    print("== M1: cycle_runner runs exactly maxCycles cycles ==")
-    with tempfile.TemporaryDirectory() as td:
-        p = Path(td) / "execution-state.json"
-        p.write_text(
-            json.dumps({"schemaVersion": 1, "cycle": 0, "budget": {"maxCycles": 2}}),
-            encoding="utf-8",
-        )
-        results = []
-        for _ in range(3):
-            proc = subprocess.run(
-                [sys.executable, str(CYCLE_RUNNER), "--state", str(p),
-                 "--", sys.executable, "-c", "pass"],
-                capture_output=True, text=True,
-            )
-            results.append(proc.returncode)
-        _assert("cycle 1 ran (rc 0)", results[0] == 0, str(results))
-        _assert("cycle 2 ran (rc 0)", results[1] == 0, str(results))
-        _assert("cycle 3 blocked (rc 2)", results[2] == 2, str(results))
-
-
 def case_llm_budget_schema() -> None:
     print("== M4: llm-budget aggregate schema + overBudget flag ==")
     payload = {
@@ -166,7 +143,6 @@ def case_llm_budget_schema() -> None:
 def main() -> int:
     case_schema_shapes()
     case_budget_boundary()
-    case_cycle_runner_no_off_by_one()
     case_llm_budget_schema()
     print()
     if FAILURES:

@@ -65,7 +65,7 @@
     refuses to write (enforced by construction via execution-state.json). Default 10.
 
 .PARAMETER MaxMinutesPerCycle
-    Budget: maximum minutes per cycle (enforced by budget_enforcer/cycle_runner).
+    Budget: maximum minutes per cycle (enforced by budget_enforcer via cycle_loop).
     Default 10.
 
 .EXAMPLE

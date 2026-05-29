@@ -16,7 +16,7 @@
 | G5   | Framework/versión declarado en `state/stack-profile.json` (sin valores `unknown`/`blocked`) | `gate_runner.py` (`gate_g5`) + `test_patch_applier.py` |
 | G6   | Linter pre-compile pasa antes de `mvn` | `gate_runner.py` (`gate_g6` → `test_linter.py`) |
 | G7   | `hash(errorCode, symbolFQN, fixId)` no marcado FAILED previamente | `gate_runner.py` (`_G7_MAX_FAILED_ATTEMPTS=2`, `_G7_MAX_TESTCASE_ATTEMPTS=3`) |
-| G8   | 2 ciclos sin delta o `compileFailRate>0.5` ⇒ abortar | `gate_runner.py` (`gate_g8`); backstop en `test_patch_applier.py` + wrapper `cycle_runner.py` |
+| G8   | 2 ciclos sin delta o `compileFailRate>0.5` ⇒ abortar | `gate_runner.py` (`gate_g8`); backstop en `test_patch_applier.py` + dueño único del loop `cycle_loop.py` (tickea budget + escribe los campos que G8 lee + evalúa G8) |
 | G9   | Diagnósticos JDT normalizados, no inferencia libre (normalización, no gate bloqueante) | `compile_error_parser.py` |
 
 ## Prohibiciones absolutas (aplica a todo agente LLM)
