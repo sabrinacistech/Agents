@@ -8,6 +8,7 @@
     "mode": { "enum": ["coverage", "branch-coverage", "mutation-hardening"] },
     "targets": {
       "type": "array",
+      "maxItems": 5000,
       "items": {
         "type": "object",
         "required": ["id", "sut", "method"],

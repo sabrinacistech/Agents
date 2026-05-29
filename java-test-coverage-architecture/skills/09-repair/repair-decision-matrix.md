@@ -1,5 +1,15 @@
 # Repair Decision Matrix
 
+> **DETERMINISTA — primero Python, después LLM.**
+> El matching `errorCode → fixId` se compila en
+> [`tools/python/repair_rules_compiler.py`](../../tools/python/repair_rules_compiler.py)
+> desde `repair-rules/*.rules`. El driver Python aplica los matches por AST
+> ([`tools/python/ast_patcher.py`](../../tools/python/ast_patcher.py)) **antes** de invocar
+> al LLM. Solo los errores no cubiertos por reglas escalan al `repair-agent`.
+>
+> Esta tabla es la **referencia conceptual** del mapping — el código vive en
+> los `.rules` y se carga por `repair_dispatch.py`.
+
 ## Mapping `errorCode → fix`
 
 | `errorCode` | `fixId` | Acción |

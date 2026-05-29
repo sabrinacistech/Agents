@@ -22,6 +22,7 @@
     },
     "constructors": {
       "type": "array",
+      "maxItems": 16,
       "items": {
         "type": "object",
         "required": ["evidenceId", "visibility", "params"],
@@ -46,6 +47,7 @@
     },
     "methods": {
       "type": "array",
+      "maxItems": 80,
       "items": {
         "type": "object",
         "required": ["evidenceId", "name", "returnType", "params", "usable"],
@@ -80,6 +82,7 @@
     },
     "builders": {
       "type": "array",
+      "maxItems": 8,
       "items": {
         "type": "object",
         "required": ["evidenceId", "kind", "entry", "build", "setters"],

@@ -112,6 +112,7 @@
         "totalMissedBranches": { "type": "integer", "minimum": 0 },
         "targets": {
           "type": "array",
+          "maxItems": 40,
           "items": {
             "type": "object",
             "required": ["targetId", "method", "missedLines", "missedBranches"],
@@ -130,6 +131,7 @@
     },
     "constructors": {
       "type": "array",
+      "maxItems": 16,
       "description": "Evidenced constructor signatures — never invent beyond this list",
       "items": {
         "type": "object",
@@ -156,6 +158,7 @@
     },
     "methods": {
       "type": "array",
+      "maxItems": 80,
       "description": "Public/protected usable methods of the SUT — never call unlisted methods",
       "items": {
         "type": "object",
@@ -184,6 +187,7 @@
     },
     "dependencies": {
       "type": "array",
+      "maxItems": 24,
       "description": "Constructor/field/setter dependencies with their injection strategy",
       "items": {
         "type": "object",
@@ -202,6 +206,7 @@
     },
     "collaboratorUsage": {
       "type": "array",
+      "maxItems": 24,
       "description": "Exact methods called on each collaborator — use only these for mock setup",
       "items": {
         "type": "object",
@@ -239,6 +244,7 @@
     },
     "fixtures": {
       "type": "array",
+      "maxItems": 60,
       "description": "Evidenced fixture entries for dependencies and test data",
       "items": {
         "type": "object",
@@ -259,6 +265,7 @@
     },
     "allowedImports": {
       "type": "array",
+      "maxItems": 200,
       "description": "Exhaustive whitelist of FQCNs the agent may use in import statements",
       "items": { "type": "string" }
     },

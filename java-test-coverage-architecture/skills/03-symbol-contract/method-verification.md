@@ -1,17 +1,12 @@
 # Method Verification
 
-## Objetivo
-Registrar todos los métodos invocables sobre un tipo (públicos, protegidos accesibles, estáticos, default de interfaz). Soporta gate **G2**.
+> **DETERMINISTA — no aplicable al LLM.**
+> Esta lógica corre en [`tools/python/bytecode_scanner.py`](../../tools/python/bytecode_scanner.py)
+> (+ `source_symbol_enricher.py` para genéricos/Lombok) y emite
+> `state/symbol-contracts/<fqcn>.json` (schema: `state/_schemas/symbol-contract.schema.json`).
+> El LLM **no invoca `javap`** — consume el contrato como dato de entrada para G2.
 
-## Procedimiento
-1. `javap -p -s <FQCN>` → leer firma + descriptor. Capturar:
-   - nombre, modificadores, tipo de retorno (con erasure y signature genérica si presente `Signature: ...`),
-   - parámetros (tipos FQCN), `throws`.
-2. Fallback AST con SymbolSolver para overloads ambiguos y métodos default.
-3. Marcar métodos sintéticos / bridge como no usables (`usable: false`).
-4. Para overloads, generar `evidenceId` distinto por firma.
-
-## Salida (fragmento del contrato del SUT)
+## Contrato (lo que el LLM lee)
 
 ```json
 {
@@ -19,11 +14,9 @@ Registrar todos los métodos invocables sobre un tipo (públicos, protegidos acc
     {
       "evidenceId": "sym:com.acme.FooService#calc(java.math.BigDecimal):e7a1",
       "name": "calc",
-      "modifiers": ["public"],
       "returnType": "java.math.BigDecimal",
       "params": [{ "type": "java.math.BigDecimal", "name": "amount" }],
       "throws": ["com.acme.DomainException"],
-      "generics": { "typeParams": [], "signature": null },
       "usable": true,
       "source": "bytecode"
     }
@@ -31,8 +24,10 @@ Registrar todos los métodos invocables sobre un tipo (públicos, protegidos acc
 }
 ```
 
-## Reglas
-- Prohibido invocar `setX`, `getX`, factory si no aparece en `methods[]` con `usable: true`.
-- Para Mockito stubs: la firma debe matchear exactamente (tipo de retorno y params); no convertir tipos primitivos a wrappers sin evidencia de overload.
-- Para `void` ⇒ usar `doNothing()` / `doThrow()`, no `when(...).thenReturn(...)`.
-- Métodos `final`/`static` solo mockeables si el preset Mockito declara `MockedStatic` / `mockito-inline` (ver `stack-profile.json`).
+## Reglas de uso (consumidor LLM)
+
+- Prohibido invocar método ausente de `methods[]` o con `usable: false`.
+- Para Mockito stubs: matchear firma exacta (returnType + params). No convertir primitivos↔wrappers sin overload evidenciado.
+- `void` ⇒ `doNothing()` / `doThrow()`, nunca `when(...).thenReturn(...)`.
+- `final` / `static` solo mockeables si `stack-profile.json` declara `mockito-inline` / `MockedStatic`.
+- Cada invocación generada DEBE citar el `evidenceId` en el evidence-comment del `@Test`.

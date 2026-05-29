@@ -147,3 +147,19 @@ state/                ← contratos JSON (escritos por Python, leídos por todos
 state/_patches/       ← JSONs de parches producidos por agentes LLM
 state/context-packs/  ← insumos mínimos para agentes LLM
 ```
+
+---
+
+## Budget enforcement (cycle orchestrator)
+
+`execution-state.json` declara `budget.maxCycles` y `budget.maxMinutesPerCycle`, pero el orchestrator del cycle-loop vive **fuera** de `run_pipeline.py` (típicamente un wrapper externo o el propio agente LLM que invoca ciclos). Para que el budget se aplique por construcción —no por convención— ese orchestrator DEBE invocar `tools/python/budget_enforcer.py` en tres puntos del ciclo:
+
+| Hook | Comando | Comportamiento esperado |
+|------|---------|--------------------------|
+| **Pre-ciclo** | `python tools/python/budget_enforcer.py check --state state/execution-state.json` | rc=0 → continuar. rc=2 → abortar (presupuesto agotado). rc=3 → state malformado, parar y diagnosticar. |
+| **Inicio de ciclo** | `python tools/python/budget_enforcer.py tick --state state/execution-state.json` | Incrementa `cycle` y estampa `cycleStartedAt` antes de iniciar el trabajo del ciclo. |
+| **Fin de ciclo** | `python tools/python/budget_enforcer.py reset --state state/execution-state.json` | Limpia `cycleStartedAt` al cerrar el ciclo (éxito o fallo controlado). |
+
+`check` evalúa dos invariantes: `cycle < budget.maxCycles` y `(now - cycleStartedAt) < budget.maxMinutesPerCycle`. Si cualquiera se viola, rc=2 y el orchestrator **MUST** interrumpir; reintentar sin abortar viola G8.
+
+`run_pipeline.py` y `run.py` son del pre-stage y NO invocan estos hooks — corren una sola vez. Son ciclos de Phase 6 (repair) y multi-batch generation los que requieren enforcement.
