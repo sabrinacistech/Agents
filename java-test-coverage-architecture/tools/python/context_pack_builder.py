@@ -32,6 +32,11 @@ from common import _TimedRun, atomic_write_json, emit_tool_summary, fail, load_j
 SCHEMA_NAME = "context-pack"
 DEFAULT_MAX_IMPORTS = 40
 TOKENS_PER_BYTE = 0.25  # rough estimate: ~4 bytes per token for JSON
+# Declared Body-Agent input budget (docs/token-minimization-strategy.md). An
+# entry whose estimatedTokensIn exceeds this is flagged overBudget so the
+# orchestrator can shrink the pack or split the SUT before dispatch — turning
+# the documented budget from a comment into an enforceable signal (audit M4).
+MAX_TOKENS_IN = 4000
 
 # P3.d: cap FAILED entries from failure-memory.json that are projected into
 # each per-SUT pack. Capped to keep the repair-agent budget bounded.
@@ -811,17 +816,28 @@ def _emit_budget(
     )
     entries = [e for e in entries if e.get("sut") != sut]
 
+    est_tokens = int(compact_pack_bytes * TOKENS_PER_BYTE)
     entry = {
         "sut": sut,
         "contextPackBytes": context_pack_bytes,
         "compactPackBytes": compact_pack_bytes,
-        "estimatedTokensIn": int(compact_pack_bytes * TOKENS_PER_BYTE),
+        "estimatedTokensIn": est_tokens,
+        "maxTokensIn": MAX_TOKENS_IN,
+        "overBudget": est_tokens > MAX_TOKENS_IN,
         "truncatedFields": truncated_fields,
     }
     entries.append(entry)
 
+    if entry["overBudget"]:
+        print(
+            f"[WARN] llm-budget: {sut} compact pack ~{est_tokens} tokens "
+            f"exceeds MAX_TOKENS_IN={MAX_TOKENS_IN}; shrink the pack or split the SUT.",
+            file=sys.stderr,
+        )
+
     total_compact = sum(e.get("compactPackBytes", 0) for e in entries)
     total_tokens = sum(e.get("estimatedTokensIn", 0) for e in entries)
+    over_budget_count = sum(1 for e in entries if e.get("overBudget"))
 
     payload = {
         "schemaVersion": schema_version,
@@ -830,6 +846,8 @@ def _emit_budget(
             "suts": len(entries),
             "compactPackBytes": total_compact,
             "estimatedTokensIn": total_tokens,
+            "maxTokensIn": MAX_TOKENS_IN,
+            "overBudgetCount": over_budget_count,
         },
         "entries": entries,
     }

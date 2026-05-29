@@ -90,10 +90,10 @@ Los archivos se guardan en `state/_patches/<testClass>.patch.json`.
     {
       "name": "testDoFoo_happyPath",
       "annotations": ["@Test"],
-      "body": "// arrange\nwhen(fooRepository.findById(1L)).thenReturn(Optional.of(new Foo()));\n// act\nString result = sut.doFoo(1L);\n// assert\nassertThat(result).isEqualTo(\"expected\");\n// evidence: sym:com.acme.FooService#doFoo:e7a1, ctor:com.acme.Foo:b3c2",
+      "body": "// arrange\nwhen(fooRepository.findById(1L)).thenReturn(Optional.of(new Foo()));\n// act\nString result = sut.doFoo(1L);\n// assert\nassertThat(result).isEqualTo(\"expected\");\n// evidence: sym:com.acme.FooService#doFoo:e7a1b2c3, ctor:com.acme.Foo:b3c2d4e5",
       "evidenceIds": [
-        "sym:com.acme.FooService#doFoo:e7a1",
-        "ctor:com.acme.Foo:b3c2"
+        "sym:com.acme.FooService#doFoo:e7a1b2c3",
+        "ctor:com.acme.Foo:b3c2d4e5"
       ]
     }
   ]
@@ -152,7 +152,7 @@ Los archivos se guardan en `state/_patches/<testClass>.patch.json`.
   "name": "testDoFoo_happyPath",
   "annotations": ["@Test"],
   "body": "<contenido del cuerpo del método, sin llaves externas>",
-  "evidenceIds": ["sym:com.acme.FooService#doFoo:e7a1"]
+  "evidenceIds": ["sym:com.acme.FooService#doFoo:e7a1b2c3"]
 }
 ```
 

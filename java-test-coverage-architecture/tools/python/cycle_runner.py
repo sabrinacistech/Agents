@@ -6,12 +6,17 @@ advisory only — a runaway repair loop could never abort by construction.
 
 This runner closes that gap:
 
-  1. `budget_enforcer check` — abort with rc=2 if the budget is already
-     exhausted (BUDGET_EXCEEDED).
-  2. `budget_enforcer tick`  — increment cycle counter and stamp start time.
+  1. `budget_enforcer tick`  — enter the cycle: increment the counter (so it is
+     the 1-based number of the cycle about to run) and stamp start time.
+  2. `budget_enforcer check` — abort with rc=2 if that cycle exceeds the budget
+     (BUDGET_EXCEEDED). Checking AFTER tick blocks the (maxCycles+1)th cycle
+     exactly — no off-by-one extra cycle (audit M1).
   3. Exec the user-supplied command.
   4. Always `budget_enforcer reset` — clear cycleStartedAt so the next cycle's
      elapsed-time check is correct, even if the command crashed.
+
+tick/reset return codes are honored: a malformed state at tick aborts the cycle
+rather than running blind (audit M2).
 
 Exit code is the command's exit code, or one of:
   2 — budget exceeded before cycle started, or the inner command was missing
@@ -71,18 +76,30 @@ def main(argv: list[str] | None = None) -> int:
         print("[FAIL] no command supplied after --", file=sys.stderr)
         return 2
 
-    rc = _run_enforcer("check", args.state)
-    if rc != 0:
-        print(f"[BLOCKED] budget check failed (rc={rc}); not starting cycle.",
-              file=sys.stderr)
-        return rc
+    # Enter the next cycle (tick), THEN verify it is within budget. Ticking
+    # first makes `cycle` the 1-based number of the cycle about to run, so the
+    # check blocks the (maxCycles+1)th cycle exactly (audit M1).
+    trc = _run_enforcer("tick", args.state)
+    if trc != 0:
+        print(f"[FAIL] budget tick failed (rc={trc}); aborting cycle.", file=sys.stderr)
+        _run_enforcer("reset", args.state)
+        return trc
 
-    _run_enforcer("tick", args.state)
+    crc = _run_enforcer("check", args.state)
+    if crc != 0:
+        print(f"[BLOCKED] budget exceeded for this cycle (rc={crc}); not running.",
+              file=sys.stderr)
+        _run_enforcer("reset", args.state)
+        return crc
+
     try:
         proc = subprocess.run(cmd, check=False)
         cmd_rc = proc.returncode
     finally:
-        _run_enforcer("reset", args.state)
+        rrc = _run_enforcer("reset", args.state)
+        if rrc != 0:
+            print(f"[WARN] budget reset failed (rc={rrc}); next cycle's "
+                  f"elapsed-time check may be inaccurate.", file=sys.stderr)
 
     return cmd_rc
 

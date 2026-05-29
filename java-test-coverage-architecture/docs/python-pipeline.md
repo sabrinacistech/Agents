@@ -74,8 +74,8 @@ Todo lo que es **parseable** (POM, classpath, bytecode, JaCoCo XML, log de Maven
 
 ## Caching y reuso
 
-- Cada script de Python escribe `<state-dir>/_cache/<name>.cache.json` con `{ "inputs": { "<file>": "<sha256>" }, "output": ... }`.
-- Si el hash de las entradas coincide, no recomputa. Para reset completo: `rm -rf <state-dir>/_cache` (por default, `../.agent-state/_cache/` desde el repo de la arquitectura).
+- `run_pipeline.py` mantiene una caché centralizada en `<state-dir>/_summaries/cache.json` (`{ "entries": { "<step>": { "inputHash": "<sha256>" } } }`), no un archivo por script.
+- Solo los pasos en `_CACHEABLE_STEPS` (definido en `run_pipeline.py`) participan; los demás corren siempre. Si el `inputHash` del paso coincide, no recomputa. Para reset completo: borrar `<state-dir>/_summaries/cache.json` (por default, `../.agent-state/_summaries/cache.json`).
 
 ## Cuándo recorrer todo
 

@@ -101,6 +101,7 @@ python tools/python/test_patch_applier.py \
 ```
 
 **Reglas absolutas del patcher:**
+- **Gates por construcción** (solo desactivables con `--no-gates` **y** la env var `TPA_ALLOW_NO_GATES=1`, uso de tests; un flag de CLI por sí solo no apaga el enforcement): antes de escribir, el patcher invoca `gate_runner.evaluate_gates` (G1/G2/G5/G7) y el backstop de budget (G8 / `maxCycles` de `execution-state.json`). Un gate que falla ⇒ exit 3; budget agotado ⇒ exit 2; **no se escribe Java**. Tras renderizar, G6 (linter) corre sobre el archivo y revierte la escritura si falla.
 - `src/main/java/**` es prohibido — el patcher lanza `PermissionError` (exit 3) ante cualquier intento.
 - Solo escribe en directorios de test autorizados: `src/test/java`, `src/integrationTest/java`, `src/integration-test/java`, `src/testFixtures/java`.
 - Inicializa archivos nuevos desde `templates/<name>.java[.tpl]` (nunca desde cero).
@@ -209,7 +210,7 @@ Política parametrizada por annotation processor detectado en `stack-profile.jso
     {
       "testClass": "com.acme.FooServiceTest",
       "sut": "com.acme.FooService",
-      "evidenceIds": ["sym:com.acme.FooService#bar(java.lang.String):e7a1"]
+      "evidenceIds": ["sym:com.acme.FooService#bar(java.lang.String):e7a1b2c3"]
     }
   ],
   "discardedTests": [

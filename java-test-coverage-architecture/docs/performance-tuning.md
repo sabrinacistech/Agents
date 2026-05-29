@@ -63,8 +63,8 @@ ls modules/ | xargs -P 4 -I{} python tools/python/bytecode_scanner.py --repo . -
 ```
 
 ### 7. Caché agresiva
-- `state/_cache/` por defecto activo.
-- No invalidar si `pom.xml` y `target/classes/**/*.class` no cambiaron.
+- Caché centralizada en `state/_summaries/cache.json` (subconjunto `_CACHEABLE_STEPS` de `run_pipeline.py`) activa por defecto.
+- No invalida si las entradas del paso (hash) no cambiaron.
 
 ### 8. Mensajes a los agentes (presupuesto)
 - El prompt de los agentes de generación (`test-intent-agent` + `test-body-agent`) debe entregar **solo**:

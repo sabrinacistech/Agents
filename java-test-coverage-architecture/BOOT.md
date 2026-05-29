@@ -121,7 +121,7 @@ Resumen operativo:
 - `state/execution-state.json` registra `lastGoodCheckpoint` (cycle/phase) y
   los hashes SHA-256 vigentes.
 - Para rebotar desde el último checkpoint sano: re-correr `run_pipeline.py`
-  (idempotente; las herramientas reusan caches en `state/_cache/`).
+  (idempotente; `run_pipeline.py` reusa la caché centralizada en `state/_summaries/cache.json`).
 - Para reset duro: borrar la carpeta hermana `../.agent-state/` y re-correr
   Phase 0. Los schemas (`state/_schemas/`) viven dentro del repo y nunca se
   borran.

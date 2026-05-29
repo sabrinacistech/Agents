@@ -32,7 +32,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from common import emit_tool_summary  # noqa: E402
+from common import atomic_write_json, emit_tool_summary  # noqa: E402
 
 EXIT_OK = 0
 EXIT_EXCEEDED = 2
@@ -48,12 +48,6 @@ def _load(state_path: Path) -> dict:
     return json.loads(state_path.read_text(encoding="utf-8"))
 
 
-def _atomic_write(state_path: Path, payload: dict) -> None:
-    tmp = state_path.with_suffix(state_path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp.replace(state_path)
-
-
 def check(state_path: Path) -> tuple[int, dict]:
     state = _load(state_path)
     budget = state.get("budget", {}) or {}
@@ -61,6 +55,10 @@ def check(state_path: Path) -> tuple[int, dict]:
     max_cycles = int(budget.get("maxCycles", DEFAULT_MAX_CYCLES))
     max_minutes = float(budget.get("maxMinutesPerCycle", DEFAULT_MAX_MINUTES_PER_CYCLE))
 
+    # `cycle` is the 1-based number of the cycle currently in progress: cycle_runner
+    # ticks it at cycle entry (tick BEFORE check), and test_patch_applier reads it
+    # mid-cycle. Blocking on strictly-greater-than means cycles 1..maxCycles run and
+    # the (maxCycles+1)th is refused — no off-by-one provided callers tick first.
     if cycle > max_cycles:
         return EXIT_EXCEEDED, {
             "ok": False, "reason": "maxCycles", "cycle": cycle, "maxCycles": max_cycles,
@@ -86,14 +84,14 @@ def tick(state_path: Path) -> tuple[int, dict]:
     state = _load(state_path)
     state["cycle"] = int(state.get("cycle", 0)) + 1
     state["cycleStartedAt"] = time.time()
-    _atomic_write(state_path, state)
+    atomic_write_json(state_path, state)
     return EXIT_OK, {"ok": True, "cycle": state["cycle"], "cycleStartedAt": state["cycleStartedAt"]}
 
 
 def reset(state_path: Path) -> tuple[int, dict]:
     state = _load(state_path)
     state.pop("cycleStartedAt", None)
-    _atomic_write(state_path, state)
+    atomic_write_json(state_path, state)
     return EXIT_OK, {"ok": True, "cycle": int(state.get("cycle", 0))}
 
 

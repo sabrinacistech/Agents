@@ -258,7 +258,7 @@ Para cada compileError:
       "name": "processOrder_withValidOrder_returnsCompleted",
       "annotations": ["@Test"],
       "body": "// given\nOrder order = new Order(1L, OrderStatus.PENDING);\nwhen(orderRepository.findById(1L)).thenReturn(Optional.of(order));\n// when\nOrderResult result = sut.processOrder(order);\n// then\nassertThat(result).isNotNull();\nassertThat(result.getStatus()).isEqualTo(OrderStatus.COMPLETED);",
-      "evidenceIds": ["sym:com.example.OrderService#processOrder:e7a1", "ctor:com.example.Order:b3c2"]
+      "evidenceIds": ["sym:com.example.OrderService#processOrder:e7a1b2c3", "ctor:com.example.Order:b3c2d4e5"]
     }
   ]
 }

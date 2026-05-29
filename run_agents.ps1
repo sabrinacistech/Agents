@@ -60,6 +60,14 @@
 .PARAMETER ContinueOnError
     Continue pipeline even if a step fails (legacy mode).
 
+.PARAMETER MaxCycles
+    Budget: maximum LLM generation/repair cycles before test_patch_applier.py
+    refuses to write (enforced by construction via execution-state.json). Default 10.
+
+.PARAMETER MaxMinutesPerCycle
+    Budget: maximum minutes per cycle (enforced by budget_enforcer/cycle_runner).
+    Default 10.
+
 .EXAMPLE
     # Minimal run (project already built):
     .\run_agents.ps1
@@ -92,7 +100,9 @@ param(
     [string]$CoverageMode = "coverage",
     [switch]$Compact,
     [switch]$NoCompactPacks,
-    [switch]$ContinueOnError
+    [switch]$ContinueOnError,
+    [int]$MaxCycles = 10,
+    [int]$MaxMinutesPerCycle = 10
 )
 
 Set-StrictMode -Version Latest
@@ -375,9 +385,38 @@ if ($PipelineExit -eq 0) {
         Write-Host "  Note: last-failure.json present (non-fatal step errors logged there)" -ForegroundColor Yellow
     }
 
+    # ── Arm the budget so test_patch_applier.py enforces it by construction ────
+    # The patcher reads execution-state.json and refuses to write Java once the
+    # budget is exhausted (exit 2). Seed it here if absent (never clobber a run
+    # already in progress). Written without BOM so Python's json.load can read it.
+    $ExecStatePath = Join-Path $StateDir "execution-state.json"
+    if (-not (Test-Path $ExecStatePath)) {
+$ExecStateJson = @"
+{
+  "schemaVersion": 1,
+  "mode": "$CoverageMode",
+  "cycle": 0,
+  "phase": "generation",
+  "budget": { "maxCycles": $MaxCycles, "maxMinutesPerCycle": $MaxMinutesPerCycle },
+  "consecutiveZeroDeltaCycles": 0,
+  "compileFailRateWindow": [],
+  "checkpoints": []
+}
+"@
+        [System.IO.File]::WriteAllText($ExecStatePath, $ExecStateJson, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host ("  [OK] Budget armed: execution-state.json (maxCycles={0}, maxMinutesPerCycle={1})" -f $MaxCycles, $MaxMinutesPerCycle) -ForegroundColor Green
+    } else {
+        Write-Host "  [INFO] execution-state.json already present - budget left as-is." -ForegroundColor DarkYellow
+    }
+
     Write-Host ""
     Write-Host "  Next step: feed context-packs to the LLM coverage agent." -ForegroundColor Cyan
     Write-Host "  Reference: MASTER_PROMPT.md / BOOT.md in java-test-coverage-architecture\"
+    Write-Host ""
+    Write-Host "  Enforcement (by construction):" -ForegroundColor Cyan
+    Write-Host "    - test_patch_applier.py rejects patches that fail G1/G2/G5/G7 or exceed budget."
+    Write-Host "    - Wrap each generation+patch cycle so maxCycles/maxMinutes tick:"
+    Write-Host "        python tools\python\cycle_runner.py --state `"$ExecStatePath`" -- <patch+lint command>" -ForegroundColor White
 } else {
     Write-Host ("  PIPELINE FAILED  (exit {0}, {1}s)" -f $PipelineExit, $elapsedSec) -ForegroundColor Red
     Write-Host "========================================================" -ForegroundColor Cyan

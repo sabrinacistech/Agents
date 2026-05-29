@@ -10,6 +10,13 @@ HARD CONSTRAINTS enforced here (not by the LLM):
   - Method-name collision detection prevents duplicate @Test methods.
   - Every injected method receives an // evidence: comment from evidenceIds[].
   - state/generated-tests.json is updated atomically after each patch.
+  - GATES BY CONSTRUCTION (only bypassable with --no-gates AND env
+    TPA_ALLOW_NO_GATES=1, used by the patcher's own tests): because this is the
+    only code path that writes Java, the deterministic gate suite is folded in
+    here so a runtime caller cannot skip it. Before writing, gate_runner.evaluate_gates enforces G1/G2/G5/G7
+    plus convergence (G8) and the execution-state budget (exit 2 if exceeded,
+    exit 3 if a gate blocks). After rendering, G6 (linter) lints the written file
+    and rolls the write back on failure.
 
 Usage:
   python test_patch_applier.py \\
@@ -25,12 +32,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import textwrap
 import uuid
 from pathlib import Path
 from typing import Any
+
+# Disabling the folded-in gates requires BOTH --no-gates AND this env var. A CLI
+# flag alone can never turn off enforcement in runtime — only the patcher's own
+# unit tests set TPA_ALLOW_NO_GATES=1. Keeps the by-construction guarantee honest.
+_ALLOW_NO_GATES_ENV = "TPA_ALLOW_NO_GATES"
 
 from common import _TimedRun, atomic_write_json, emit_tool_summary, load_json, validate  # noqa: F401
 
@@ -513,8 +526,11 @@ def _update_report(
 ) -> None:
     if out_path.exists():
         report = load_json(out_path)
+        if not isinstance(report, dict):
+            report = {"schemaVersion": 1, "tests": []}
     else:
         report = {"schemaVersion": 1, "tests": []}
+    report.setdefault("schemaVersion", 1)
 
     cycle = patch.get("cycle", 1)
     all_evidence: list[str] = [
@@ -530,9 +546,15 @@ def _update_report(
         "evidenceIds": all_evidence,
     }
     report["cycle"] = cycle
-    tests: list[dict] = report.setdefault("tests", [])
+    tests = report.get("tests")
+    if not isinstance(tests, list):
+        tests = []
+        report["tests"] = tests
     existing = next(
-        (t for t in tests if t["testClass"] == result["testClass"]),
+        (
+            t for t in tests
+            if isinstance(t, dict) and t.get("testClass") == result["testClass"]
+        ),
         None,
     )
     if existing:
@@ -618,7 +640,28 @@ def main() -> int:
             "Any import absent from the authorized set causes exit 3."
         ),
     )
+    ap.add_argument(
+        "--no-gates",
+        action="store_true",
+        help=(
+            "Disable the folded-in deterministic gate suite (G1/G2/G5/G6/G7/G8) "
+            "and the budget backstop. Only takes effect when the environment "
+            f"variable {_ALLOW_NO_GATES_ENV}=1 is also set (unit tests of the "
+            "patcher only) — a CLI flag alone can NEVER disable enforcement in "
+            "runtime: the gates are the by-construction anti-hallucination guarantee."
+        ),
+    )
     args = ap.parse_args()
+
+    # --no-gates is honored only with the env opt-in. Otherwise it is ignored and
+    # gates stay ON (fail-safe), so a stray runtime flag cannot weaken enforcement.
+    gates_disabled = args.no_gates and os.environ.get(_ALLOW_NO_GATES_ENV) == "1"
+    if args.no_gates and not gates_disabled:
+        print(
+            f"[WARN] --no-gates ignored: set {_ALLOW_NO_GATES_ENV}=1 to disable "
+            "gates (tests only). Enforcing gates.",
+            file=sys.stderr,
+        )
 
     repo = Path(args.repo).resolve()
     state_dir = Path(args.state) if Path(args.state).is_absolute() else Path.cwd() / args.state
@@ -699,6 +742,57 @@ def main() -> int:
                 return 3
     # ── End perimeter middleware ───────────────────────────────────────────────
 
+    # ── Gate + budget enforcement BY CONSTRUCTION (M2) ─────────────────────────
+    # This is the only code path that writes Java, so the gate suite is folded
+    # in here: a patch that fails the anti-hallucination gates (G1/G2/G5/G7) or
+    # exceeds the budget (G8 / maxCycles) never reaches disk. G6 (linter) needs
+    # the rendered file and runs post-write below.
+    if not gates_disabled:
+        from budget_enforcer import EXIT_EXCEEDED, check as _budget_check  # local
+        from gate_runner import evaluate_gates  # local import (same dir)
+
+        exec_state = state_dir / "execution-state.json"
+        if exec_state.exists():
+            try:
+                brc, bpayload = _budget_check(exec_state)
+            except Exception as exc:  # malformed state must not silently pass
+                print(f"[BLOCKED] BUDGET_STATE_UNREADABLE: {exc}", file=sys.stderr)
+                return 2
+            if brc == EXIT_EXCEEDED:
+                print(
+                    f"[BLOCKED] BUDGET_EXCEEDED ({bpayload.get('reason')}): "
+                    f"cycle={bpayload.get('cycle')} maxCycles={bpayload.get('maxCycles')}",
+                    file=sys.stderr,
+                )
+                return 2
+
+        gate_report = evaluate_gates(
+            patch,
+            context_pack or {},
+            state_dir,
+            test_file=None,  # G6 runs post-write (needs the rendered file)
+            context_pack_path=(
+                Path(args.context_pack).resolve() if args.context_pack else None
+            ),
+        )
+        if gate_report.get("status") == "FAIL":
+            br = gate_report.get("blockedReason") or "GATE_FAIL"
+            rc = 2 if br.startswith("G8") else 3
+            print(f"[BLOCKED] gate {br}", file=sys.stderr)
+            return rc
+    # ── End gate + budget enforcement ──────────────────────────────────────────
+
+    # Capture prior content so a post-write G6 failure can be rolled back
+    # (None when the target test file does not yet exist).
+    prior_text: str | None = None
+    if not gates_disabled and not args.dry_run:
+        try:
+            _pre_path = _resolve_test_file(patch, repo)
+            if _pre_path.exists():
+                prior_text = _pre_path.read_text(encoding="utf-8")
+        except Exception:
+            prior_text = None
+
     try:
         result = apply_patch(patch, repo, templates_dir, dry_run=args.dry_run)
     except PermissionError as exc:
@@ -710,6 +804,33 @@ def main() -> int:
     except Exception as exc:
         print(f"[FAIL] Unexpected error: {exc}", file=sys.stderr)
         return 1
+
+    # ── G6 (static linter) post-write: lint what we rendered; roll back on FAIL ─
+    if not gates_disabled and not args.dry_run:
+        from gate_runner import gate_g6  # local import (same dir)
+
+        written = Path(result["file"])
+        g6 = gate_g6(
+            state_dir,
+            written,
+            Path(args.context_pack).resolve() if args.context_pack else None,
+        )
+        if g6.get("status") == "FAIL":
+            try:
+                if prior_text is None:
+                    written.unlink(missing_ok=True)
+                else:
+                    rb_tmp = written.with_suffix(written.suffix + ".tmp")
+                    rb_tmp.write_text(prior_text, encoding="utf-8")
+                    rb_tmp.replace(written)
+            except OSError as exc:
+                print(f"[WARN] G6 rollback failed: {exc}", file=sys.stderr)
+            print(
+                f"[BLOCKED] gate G6_LINTER_FAIL "
+                f"(violations={g6.get('violationCount')}; write rolled back)",
+                file=sys.stderr,
+            )
+            return 3
 
     _update_report(out_path, result, patch, dry_run=args.dry_run)
 

@@ -31,7 +31,7 @@ is no longer loaded in subsequent prompts.
     "compileFailRate": 0.0
   },
   "patchFiles": ["003-com.acme.FooService-p0014.diff"],
-  "evidenceIds": ["sym:com.acme.FooService#bar:e7a1", "ctor:com.acme.BarService:f3b2"]
+  "evidenceIds": ["sym:com.acme.FooService#bar:e7a1b2c3", "ctor:com.acme.BarService:f3b2c1d0"]
 }
 ```
 

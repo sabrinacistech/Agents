@@ -12,6 +12,7 @@ Exits non-zero on any failure.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -67,9 +68,13 @@ def main() -> int:
                 "--state", str(state),
                 "--templates", str(TEMPLATES_DIR),
                 "--out", str(state / "generated-tests.json"),
+                # Isolate the body-validation path; gate enforcement is covered
+                # by the patcher's own integration test (test_patcher_gates.py).
+                "--no-gates",
             ],
             capture_output=True,
             text=True,
+            env={**os.environ, "TPA_ALLOW_NO_GATES": "1"},
         )
 
         problems: list[str] = []

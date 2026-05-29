@@ -9,15 +9,15 @@
 
 | Gate | Qué valida | Bloqueado por |
 |------|------------|---------------|
-| G1   | Import ∈ `state/import-whitelist.json` | `test_linter.py` |
-| G2   | Cada símbolo tiene `evidenceId` en `state/symbol-contracts/<fqcn>.json` | `test_linter.py` |
-| G3   | Bytecode primero — AST solo fallback | `bytecode_scanner.py` |
-| G4   | Annotation processors → `target/generated-sources` indexado | `generated_code_scanner.py` |
-| G5   | Framework/versión declarado en `state/stack-profile.json` | `test_linter.py --stack-profile` |
-| G6   | Linter pre-compile pasa antes de `mvn` | `gate_runner.py` |
-| G7   | `hash(errorCode, symbolFQN, fixId)` no marcado FAILED previamente | `gate_runner.py` (`_G7_MAX_TESTCASE_ATTEMPTS=3`) |
-| G8   | 2 ciclos sin delta o `compileFailRate>0.5` ⇒ abortar | `run_pipeline.py` orchestrator |
-| G9   | Diagnósticos JDT normalizados, no inferencia libre | `compile_error_parser.py` |
+| G1   | Import ∈ `state/import-whitelist.json` | `gate_runner.py` (`gate_g1`) + `test_patch_applier.py` + `test_linter.py` |
+| G2   | Cada `methods[].evidenceIds` del patch existe en `state/symbol-contracts/<fqcn>.json` | `gate_runner.py` (`gate_g2`) + `test_patch_applier.py` |
+| G3   | Bytecode primero — AST solo fallback (política de precedencia, no gate en runtime) | `bytecode_scanner.py` |
+| G4   | Annotation processors → `target/generated-sources` indexado | **NOT_IMPLEMENTED** (pendiente; `gate_runner.py` lo reporta `NOT_IMPLEMENTED`) |
+| G5   | Framework/versión declarado en `state/stack-profile.json` (sin valores `unknown`/`blocked`) | `gate_runner.py` (`gate_g5`) + `test_patch_applier.py` |
+| G6   | Linter pre-compile pasa antes de `mvn` | `gate_runner.py` (`gate_g6` → `test_linter.py`) |
+| G7   | `hash(errorCode, symbolFQN, fixId)` no marcado FAILED previamente | `gate_runner.py` (`_G7_MAX_FAILED_ATTEMPTS=2`, `_G7_MAX_TESTCASE_ATTEMPTS=3`) |
+| G8   | 2 ciclos sin delta o `compileFailRate>0.5` ⇒ abortar | `gate_runner.py` (`gate_g8`); backstop en `test_patch_applier.py` + wrapper `cycle_runner.py` |
+| G9   | Diagnósticos JDT normalizados, no inferencia libre (normalización, no gate bloqueante) | `compile_error_parser.py` |
 
 ## Prohibiciones absolutas (aplica a todo agente LLM)
 
@@ -54,7 +54,7 @@ NaturalPerson p = new NaturalPerson.Builder()
 // (Si JUnit 4 declarado, no @ExtendWith(MockitoExtension.class))
 
 // Evidence comment al final de cada @Test
-// evidence: sym:com.acme.FooService#processName:e7a1, ctor:com.acme.FooService:b3c1
+// evidence: sym:com.acme.FooService#processName:e7a1b2c3, ctor:com.acme.FooService:b3c1d2e0
 ```
 
 ## Dónde buscar evidencia

@@ -124,6 +124,9 @@ def _index_rules_by_kind(compiled_rules: dict) -> dict[str, list[dict]]:
     return out
 
 
+_AST_PATCHER_TIMEOUT_S = 30
+
+
 def _run_ast_patcher(
     test_file: Path,
     action: str,
@@ -147,7 +150,14 @@ def _run_ast_patcher(
         cmd += ["--arg", arg]
     if whitelist is not None and action == "addImport":
         cmd += ["--whitelist", str(whitelist)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_AST_PATCHER_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        # Slow/hung patcher (e.g. AV-scanned FS on Windows): do not crash the
+        # whole dispatch — report failure so the violation escalates to the LLM.
+        return False, False, f"ast_patcher timed out after {_AST_PATCHER_TIMEOUT_S}s"
     raw = (proc.stdout or "") + (proc.stderr or "")
     changed = False
     try:

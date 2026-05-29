@@ -233,8 +233,33 @@ def build_summary(state_dir: Path) -> dict:
             "or batch-plan.json — every fact you need is in this summary.",
             "Proceed directly to Phase 8 (Generation): consume "
             "state/context-packs-compact/<safe_fqcn>.json for each SUT in batchPlan.topSuts.",
+            "Token budget: load ONLY the skills for the active phase + mode "
+            f"(mode={batch_plan.get('mode', '') or 'coverage'}); do NOT load all "
+            "skills/11-quality/*.md at once (~15K tokens). branch-coverage → add the "
+            "boundary/null-value fixture skills; mutation-hardening → the "
+            "assertion-strengthening skills. Per-SUT estimatedTokensIn / overBudget "
+            "live in state/_summaries/llm-budget.json.",
         ],
     }
+
+
+def _emit_summary(out_path: Path, payload: dict) -> None:
+    """Validate the handoff summary against its schema, then write atomically.
+
+    A schema violation means build_summary() drifted from
+    protocols/handoff-summary.schema.json. We log it loudly but still emit the
+    summary so the orchestrator is never left without a handoff to read.
+    """
+    try:
+        validate("protocols/handoff-summary", payload)
+    except Exception as e:
+        print(
+            "[WARN] handoff-summary schema violation (emitting anyway): "
+            f"{str(e).splitlines()[0][:200]}",
+            file=sys.stderr,
+        )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(out_path, payload)
 
 
 def main() -> int:
@@ -277,9 +302,7 @@ def main() -> int:
             "status": "BLOCKED_PRE_STAGE_MISSING",
             "missing": missing,
         }
-        out_path = state_dir / "_summaries" / "handoff-summary.json"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(out_path, payload)
+        _emit_summary(state_dir / "_summaries" / "handoff-summary.json", payload)
         return 2
 
     invalid = _validate_required(state_dir)
@@ -294,15 +317,12 @@ def main() -> int:
             "status": "BLOCKED_PRE_STAGE_INVALID",
             "invalid": invalid,
         }
-        out_path = state_dir / "_summaries" / "handoff-summary.json"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(out_path, payload)
+        _emit_summary(state_dir / "_summaries" / "handoff-summary.json", payload)
         return 2
 
     summary = build_summary(state_dir)
     out_path = state_dir / "_summaries" / "handoff-summary.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(out_path, summary)
+    _emit_summary(out_path, summary)
 
     if args.print_summary:
         json.dump(summary, sys.stdout, ensure_ascii=False, indent=2)

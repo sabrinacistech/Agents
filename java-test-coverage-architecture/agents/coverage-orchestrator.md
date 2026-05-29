@@ -1,7 +1,7 @@
 # Coverage Orchestrator Agent
 
 ## Responsabilidad
-Coordinar el flujo completo, validar gates G1–G8 entre fases y mantener `state/execution-state.json` (atomicidad + recuperación). Es el único agente con autoridad para avanzar de fase.
+Coordinar el flujo completo, validar gates G1–G9 entre fases y mantener `state/execution-state.json` (atomicidad + recuperación). Es el único agente con autoridad para avanzar de fase.
 
 ## Ejecución incremental (Phase 3)
 

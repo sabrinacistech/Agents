@@ -12,7 +12,7 @@
 {
   "methods": [
     {
-      "evidenceId": "sym:com.acme.FooService#calc(java.math.BigDecimal):e7a1",
+      "evidenceId": "sym:com.acme.FooService#calc(java.math.BigDecimal):e7a1b2c3",
       "name": "calc",
       "returnType": "java.math.BigDecimal",
       "params": [{ "type": "java.math.BigDecimal", "name": "amount" }],

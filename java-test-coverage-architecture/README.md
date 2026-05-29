@@ -14,6 +14,12 @@ discovery → stack-profile → classification → symbol-contract
         → validation → repair → reporting
 ```
 
+> **Nota (post-audit 2026-05-28):** las fases `discovery → planning` ya **no son
+> turnos LLM** — corren como pre-stage determinista en `run_pipeline.py` y se
+> validan en un único gate (`validate_handoff.py`). El LLM solo ejecuta
+> `generation` y `repair`. `reporting` es Python determinista
+> (`cycle_report_builder.py`). Ver [`BOOT.md`](BOOT.md) §Procedimiento.
+
 ## Estructura
 
 ```text
@@ -22,7 +28,7 @@ skills/              Procedimientos accionables por dominio
 state/_schemas/      JSON Schemas Draft-07 (validación obligatoria) — único contenido versionado bajo state/
 docs/                Notas de arquitectura y políticas
 tools/python/        Pre-stage determinista (parsea POM/classpath/javap/JaCoCo)
-MASTER_PROMPT.md     Prompt principal con gates G1–G8
+MASTER_PROMPT.md     Prompt principal con gates G1–G9
 ```
 
 Los **artefactos generados** (JSONs deterministas, context-packs, summaries, patches, caches)
@@ -63,7 +69,12 @@ CXF (`wsdl2java`), OpenAPI Generator, Lombok, FreeBuilder, MapStruct, Immutables
 | G5 | Generation sin `stack-profile.json` válido |
 | G6 | Static pre-compile linter sobre el test |
 | G7 | Re-aplicación de fix ya fallido |
-| G8 | Convergencia (delta=0 o compile-fail-rate alto) |
+| G8 | Convergencia (delta=0 dos ciclos o compile-fail-rate > 0.5) |
+| G9 | Diagnósticos JDT/compilación normalizados (sin inferencia libre) |
+
+> G4 está reportado como `NOT_IMPLEMENTED` por `gate_runner.py` (pendiente). El
+> resto de los gates se hacen cumplir de forma determinista — G1/G2/G5 también
+> dentro de `test_patch_applier.py`, que es el único punto que escribe Java.
 
 ## Modos
 
@@ -88,6 +99,6 @@ Para ejecutar desde Visual Studio Code, usar la guía [`docs/vscode-copilot-exec
 4. Ejecutar Orchestrator con `mode` y `budget` pegando `BOOT.md` en el chat (o cargándolo desde el agente).
 5. Validar cada test generado con `tools/python/test_linter.py` antes de compilar.
 6. Inspeccionar `state/execution-state.json` y los `state/_summaries/cycle-*.json` para progreso.
-7. Reporte final emitido por `reporting-agent`.
+7. Reporte final emitido determinísticamente por `tools/python/cycle_report_builder.py` (migrado desde el ex-`reporting-agent`; no requiere turno LLM).
 
 Para detalles operativos del día a día, ver [`docs/developer-guide.md`](docs/developer-guide.md).

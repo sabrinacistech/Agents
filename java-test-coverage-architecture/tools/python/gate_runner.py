@@ -6,6 +6,10 @@ Implements the following gates today:
                            pack's `allowedImports`. Compact packs expose this
                            as `imp` (either a flat array or a prefix-compressed
                            {prefixes, leaves} object).
+  G2 (SYMBOL_EVIDENCE)   — every patch method must cite ≥1 evidenceId, and each
+                           cited id must exist in some state/symbol-contracts/
+                           <fqcn>.json (constructors/methods/builders). A method
+                           without evidence, or citing an unknown id, FAILs.
   G5 (STACK_PROFILE)     — context-pack stack must contain no "unknown" values
                            and `blocked` must not be true.
   G6 (TEST_LINT)         — when --test-file is supplied, invoke test_linter.py.
@@ -53,7 +57,6 @@ sys.path.insert(0, str(HERE))
 from common import _TimedRun  # noqa: E402
 
 _NOT_IMPLEMENTED: dict[str, str] = {
-    "G2": "symbol-contract evidence cross-check not implemented yet",
     "G4": "fixture/strategy validation not implemented yet",
 }
 
@@ -145,6 +148,84 @@ def gate_g1(patch: dict, pack: dict) -> dict:
             "missing": missing,
         }
     return {"status": "PASS", "checked": len(patch_imports)}
+
+
+def _collect_contract_evidence(state_dir: Path) -> set[str]:
+    """Collect every evidenceId declared across state/symbol-contracts/*.json.
+
+    Pulls ids from constructors[], methods[] and builders[] — each carries an
+    `evidenceId` per symbol-contract.schema.json. Returns an empty set when the
+    directory is absent; gate_g2 then treats any cited id as an orphan (the
+    pre-stage guarantees this directory exists before Generation).
+    """
+    evidence: set[str] = set()
+    contracts_dir = state_dir / "symbol-contracts"
+    if not contracts_dir.is_dir():
+        return evidence
+    for path in sorted(contracts_dir.glob("*.json")):
+        try:
+            contract = _load_json(path)
+        except Exception:
+            continue
+        if not isinstance(contract, dict):
+            continue
+        for bucket in ("constructors", "methods", "builders"):
+            items = contract.get(bucket)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict):
+                    eid = item.get("evidenceId")
+                    if isinstance(eid, str) and eid:
+                        evidence.add(eid)
+    return evidence
+
+
+def gate_g2(patch: dict, state_dir: Path) -> dict:
+    """G2 — symbol-evidence gate (anti-hallucination).
+
+    Every test method the patch emits must cite at least one evidenceId, and
+    every cited id must exist in some state/symbol-contracts/<fqcn>.json. A
+    method with no evidenceIds, or one citing an id absent from the contracts,
+    is a hallucinated symbol → FAIL with G2_SYMBOL_WITHOUT_EVIDENCE.
+
+    Patches in the BLOCKED shape (status == "BLOCKED") are SKIPPED: they emit no
+    Java and carry no methods. A patch with no `methods` PASSes (nothing to verify).
+    """
+    if str(patch.get("status", "")).upper() == "BLOCKED":
+        return {"status": "SKIPPED", "reason": "patch is BLOCKED — no methods to verify"}
+
+    methods = patch.get("methods")
+    if not isinstance(methods, list) or not methods:
+        return {"status": "PASS", "reason": "patch declares no test methods", "evidenceChecked": 0}
+
+    known = _collect_contract_evidence(state_dir)
+
+    methods_without_evidence: list[str] = []
+    orphan_ids: list[dict] = []
+    checked = 0
+    for m in methods:
+        if not isinstance(m, dict):
+            continue
+        name = str(m.get("name") or "<anonymous>")
+        ev_ids = m.get("evidenceIds")
+        if not isinstance(ev_ids, list) or not ev_ids:
+            methods_without_evidence.append(name)
+            continue
+        for eid in ev_ids:
+            checked += 1
+            if str(eid) not in known:
+                orphan_ids.append({"method": name, "evidenceId": str(eid)})
+
+    if methods_without_evidence or orphan_ids:
+        return {
+            "status": "FAIL",
+            "blockedReason": "G2_SYMBOL_WITHOUT_EVIDENCE",
+            "methodsWithoutEvidence": methods_without_evidence,
+            "orphanEvidenceIds": orphan_ids,
+            "contractsAvailable": len(known),
+        }
+    return {"status": "PASS", "evidenceChecked": checked, "contractsAvailable": len(known)}
 
 
 def gate_g5(pack: dict) -> dict:
@@ -324,7 +405,38 @@ def gate_g7(
     }
 
 
-def gate_g6(state_dir: Path, test_file: Path | None) -> dict:
+def _resolve_compact_pack(state_dir: Path, test_file: Path) -> Path | None:
+    """Best-effort map of a test file to its compact context-pack by safe-FQCN.
+
+    `src/test/java/com/acme/FooServiceTest.java` → `com.acme.FooService` →
+    `state/context-packs-compact/com.acme.FooService.json` (dots are preserved
+    by context_pack_builder.safe_fqcn). Used only as a fallback when the caller
+    does not pass the pack path explicitly. Returns the candidate path (caller
+    checks existence) or None when the simple name cannot be derived.
+    """
+    stem = test_file.stem
+    for suffix in ("Tests", "Test", "IT"):
+        if stem.endswith(suffix):
+            simple = stem[: -len(suffix)]
+            break
+    else:
+        simple = stem
+    if not simple:
+        return None
+    parts = test_file.as_posix().split("/")
+    pkg_parts: list[str] = []
+    if "java" in parts:
+        idx = len(parts) - 1 - parts[::-1].index("java")
+        pkg_parts = parts[idx + 1 : -1]
+    fqcn = ".".join([*pkg_parts, simple]) if pkg_parts else simple
+    return state_dir / "context-packs-compact" / f"{fqcn}.json"
+
+
+def gate_g6(
+    state_dir: Path,
+    test_file: Path | None,
+    context_pack_path: Path | None = None,
+) -> dict:
     if test_file is None:
         return {"status": "SKIPPED", "reason": "no --test-file supplied"}
     linter = HERE / "test_linter.py"
@@ -338,7 +450,10 @@ def gate_g6(state_dir: Path, test_file: Path | None) -> dict:
         }
     # G6-quality (skills/11-quality/) corre por default desde test_linter.py.
     # No se pasa --no-quality-checks: queremos los 14 checks activos siempre.
-    context_pack_path = state_dir / "context-packs" / f"{test_file.stem.replace('Test', '')}.json"
+    # Use the caller-supplied context-pack when available; otherwise fall back
+    # to the compact pack derived by safe-FQCN (A2: never the verbose dir / the
+    # broken stem.replace("Test", "") that missed every safe-FQCN filename).
+    cp_path = context_pack_path or _resolve_compact_pack(state_dir, test_file)
     cmd = [
         sys.executable,
         str(linter),
@@ -348,8 +463,8 @@ def gate_g6(state_dir: Path, test_file: Path | None) -> dict:
         "--stack-profile", str(state_dir / "stack-profile.json"),
         "--index", str(state_dir / "index"),
     ]
-    if context_pack_path.exists():
-        cmd.extend(["--context-pack", str(context_pack_path)])
+    if cp_path is not None and cp_path.exists():
+        cmd.extend(["--context-pack", str(cp_path)])
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     except Exception as exc:
@@ -485,6 +600,72 @@ def _try_auto_repair(state_dir: Path, test_file: Path) -> dict:
     return out
 
 
+# ── orchestration (shared by CLI and test_patch_applier.py) ─────────────────────
+
+def evaluate_gates(
+    patch: dict,
+    pack: dict,
+    state_dir: Path,
+    test_file: Path | None = None,
+    cli_attempts: list[dict] | None = None,
+    auto_repair: bool = False,
+    context_pack_path: Path | None = None,
+) -> dict:
+    """Run gates G1..G8 over a candidate patch and return the report dict.
+
+    Single source of the gate aggregation logic, shared by this module's CLI and
+    by `test_patch_applier.py` (which folds gate evaluation into the only code
+    path that physically writes Java — making the gates impossible to bypass).
+    Persists the report to `<state>/_summaries/gates.json` as a side effect.
+
+    The report `status` is "FAIL" if any blocking gate (G1/G2/G5/G6/G7/G8) fails,
+    otherwise "PASS" when at least one gate passed, else "NOT_IMPLEMENTED".
+    """
+    gates: dict[str, dict] = {}
+    gates["G1"] = gate_g1(patch, pack)
+    gates["G2"] = gate_g2(patch, state_dir)
+    gates["G4"] = {"status": "NOT_IMPLEMENTED", "reason": _NOT_IMPLEMENTED["G4"]}
+    gates["G5"] = gate_g5(pack)
+    gates["G6"] = gate_g6(state_dir, test_file, context_pack_path)
+    if auto_repair and gates["G6"].get("status") == "FAIL" and test_file is not None:
+        dispatch_report = _try_auto_repair(state_dir, test_file)
+        gates["G6"]["autoRepair"] = dispatch_report
+        # Re-run G6 if dispatch actually changed the file.
+        if dispatch_report.get("repaired"):
+            gates["G6"] = gate_g6(state_dir, test_file, context_pack_path)
+            gates["G6"]["autoRepair"] = dispatch_report
+    gates["G7"] = gate_g7(patch, state_dir, cli_attempts)
+    gates["G8"] = gate_g8(state_dir)
+
+    blocked_reason: str | None = None
+    for key in ("G1", "G2", "G5", "G6", "G7", "G8"):
+        g = gates.get(key, {})
+        if g.get("status") == "FAIL":
+            blocked_reason = g.get("blockedReason") or f"{key}_FAIL"
+            break
+
+    if blocked_reason:
+        status = "FAIL"
+    elif any(g.get("status") == "PASS" for g in gates.values()):
+        status = "PASS"
+    else:
+        status = "NOT_IMPLEMENTED"
+
+    report = {
+        "schemaVersion": 1,
+        "status": status,
+        "gates": gates,
+        "blockedReason": blocked_reason,
+    }
+
+    summaries = state_dir / "_summaries"
+    summaries.mkdir(parents=True, exist_ok=True)
+    out_path = summaries / "gates.json"
+    with out_path.open("w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=2, ensure_ascii=False)
+    return report
+
+
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -541,52 +722,19 @@ def main() -> int:
 
     cli_attempts = _parse_cli_attempts(args.repair_attempt)
 
-    gates: dict[str, dict] = {}
-    gates["G1"] = gate_g1(patch, pack)
-    gates["G2"] = {"status": "NOT_IMPLEMENTED", "reason": _NOT_IMPLEMENTED["G2"]}
-    gates["G4"] = {"status": "NOT_IMPLEMENTED", "reason": _NOT_IMPLEMENTED["G4"]}
-    gates["G5"] = gate_g5(pack)
-    gates["G6"] = gate_g6(state_dir, test_file)
-    if args.auto_repair and gates["G6"].get("status") == "FAIL" and test_file is not None:
-        dispatch_report = _try_auto_repair(state_dir, test_file)
-        gates["G6"]["autoRepair"] = dispatch_report
-        # Re-run G6 if dispatch actually changed the file.
-        if dispatch_report.get("repaired"):
-            gates["G6"] = gate_g6(state_dir, test_file)
-            gates["G6"]["autoRepair"] = dispatch_report
-    gates["G7"] = gate_g7(patch, state_dir, cli_attempts)
-    gates["G8"] = gate_g8(state_dir)
-
-    blocked_reason: str | None = None
-    for key in ("G1", "G5", "G6", "G7", "G8"):
-        g = gates.get(key, {})
-        if g.get("status") == "FAIL":
-            blocked_reason = g.get("blockedReason") or f"{key}_FAIL"
-            break
-
-    if blocked_reason:
-        status = "FAIL"
-    elif any(g.get("status") == "PASS" for g in gates.values()):
-        status = "PASS"
-    else:
-        status = "NOT_IMPLEMENTED"
-
-    report = {
-        "schemaVersion": 1,
-        "status": status,
-        "gates": gates,
-        "blockedReason": blocked_reason,
-    }
-
-    summaries = state_dir / "_summaries"
-    summaries.mkdir(parents=True, exist_ok=True)
-    out_path = summaries / "gates.json"
-    with out_path.open("w", encoding="utf-8") as fh:
-        json.dump(report, fh, indent=2, ensure_ascii=False)
+    report = evaluate_gates(
+        patch,
+        pack,
+        state_dir,
+        test_file=test_file,
+        cli_attempts=cli_attempts,
+        auto_repair=args.auto_repair,
+        context_pack_path=Path(args.context_pack).resolve(),
+    )
 
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
-    return 0 if status != "FAIL" else 1
+    return 0 if report["status"] != "FAIL" else 1
 
 
 if __name__ == "__main__":

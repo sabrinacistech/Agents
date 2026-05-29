@@ -122,7 +122,7 @@ intención estructurada:
       "name": "testDoFoo_happyPath",
       "annotations": ["@Test"],
       "body": "// arrange\nwhen(fooRepository.findById(1L)).thenReturn(Optional.of(new Foo()));\n// act\nString result = sut.doFoo(1L);\n// assert\nassertThat(result).isEqualTo(\"expected\");",
-      "evidenceIds": ["sym:com.acme.FooService#doFoo:e7a1"]
+      "evidenceIds": ["sym:com.acme.FooService#doFoo:e7a1b2c3"]
     }
   ]
 }

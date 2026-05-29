@@ -67,7 +67,11 @@ python tools/python/state_validator.py --state state
 
 ## Caché
 
-Cada script computa SHA-256 de sus entradas y, si la salida JSON existe con el mismo hash, **no recomputa**. La caché vive en `state/_cache/<script>.cache.json`.
+`run_pipeline.py` mantiene una caché centralizada de input-hash en
+`<state-dir>/_summaries/cache.json` para el subconjunto de pasos cacheables
+(`_CACHEABLE_STEPS` en `run_pipeline.py`): si el hash de las entradas coincide
+con el registrado, ese paso **no recomputa**. Los pasos no listados siempre
+corren. Para reset de caché: borrar `<state-dir>/_summaries/cache.json`.
 
 ## Convención de errores
 

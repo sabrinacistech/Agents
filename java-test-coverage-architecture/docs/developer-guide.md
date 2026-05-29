@@ -10,7 +10,7 @@ Esta guía es el camino completo para que un desarrollador ponga a correr la arq
 |-------------|---------|--------------|
 | JDK | 8 o 21 (según archetype) | `java -version` |
 | Maven | 3.8+ | `mvn -v` |
-| Python | 3.10+ | `python --version` |
+| Python | 3.9+ | `python --version` |
 | VS Code + GitHub Copilot Chat | actual | extensión activada |
 
 Variables de entorno:
@@ -136,7 +136,7 @@ Responder en el chat con `ok` (o ajustes) para avanzar. A partir del segundo cic
 
 ## 8. Lectura del reporte final
 
-`reporting-agent` deja:
+`cycle_report_builder.py` (ex-`reporting-agent`, Python determinístico) deja:
 - `state/_summaries/cycle-<n>.json` por ciclo.
 - Reporte final con cobertura antes/después (derivada de los XML JaCoCo reales).
 - Lista de tests generados con sus `evidence-id`.
@@ -167,11 +167,11 @@ Si `writeTests: false`, los tests están en el reporte. Para aplicarlos, repetir
 | Recompilación (`target/classes` cambia) | `bytecode_scanner.py` |
 | Nuevo spec OpenAPI / WSDL | `generated_code_scanner.py` + recompilar |
 | Nuevo `jacoco.xml` | `jacoco_parser.py --mode targets` o `--mode delta` |
-| Reset completo | borrar `state/_cache/` y `state/*.json` y re-correr |
+| Reset completo | borrar `state/_summaries/cache.json` y `state/*.json` y re-correr |
 
 ## 11. Archivos clave de referencia
 
-- [MASTER_PROMPT.md](MASTER_PROMPT.md) — reglas del orquestador y gates G1–G8.
+- [MASTER_PROMPT.md](MASTER_PROMPT.md) — reglas del orquestador y gates G1–G9.
 - [BOOT.md](BOOT.md) — punto único de arranque (Phase 0, parámetros, reglas duras, procedimiento).
 - [docs/python-pipeline.md](docs/python-pipeline.md) — frontera LLM ↔ Python.
 - [docs/performance-tuning.md](docs/performance-tuning.md) — optimizaciones contra ciclos largos.
@@ -192,6 +192,6 @@ Si `writeTests: false`, los tests están en el reporte. Para aplicarlos, repetir
 [ ] Verificar state/*.json y state/symbol-contracts/
 [ ] Pegar BOOT.md en el chat con parámetros
 [ ] Avanzar fase por fase; al fallar un gate, leer la tabla del punto 9
-[ ] Revisar reporte final de reporting-agent
+[ ] Revisar reporte final de cycle_report_builder.py (state/_summaries/cycle-<N>-report.json)
 [ ] Si writeTests:true, validar diff y correr mvn test
 ```

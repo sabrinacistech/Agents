@@ -50,7 +50,7 @@ Exit code != 0 ⇒ **descartar la sugerencia entera**, no parchear.
 Cada `@Test` termina con un comentario citando los `evidenceId` consumidos:
 
 ```java
-// evidence: sym:com.acme.FooService#processName:e7a1, ctor:com.acme.FooService:b3c1
+// evidence: sym:com.acme.FooService#processName:e7a1b2c3, ctor:com.acme.FooService:b3c1d2e0
 ```
 
 Si no podés citar evidencia → el símbolo no está verificado → **no escribas esa línea**.
