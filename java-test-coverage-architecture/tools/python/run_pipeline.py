@@ -9,6 +9,7 @@ Runs (in order):
    6. bytecode_scanner          → state/symbol-contracts/<fqcn>.json  (if --module)
    7. source_symbol_enricher    → enrich contracts (FreeBuilder/Lombok source-only semantics)
    8. jacoco_parser (targets)   → state/coverage-targets.json         (if --jacoco-xml)
+                                  + state/jacoco-baseline.xml snapshot (delta `--before`, M4)
    9. semantic_index_writer     → state/index/{classes,methods,imports,dependencies,annotations}.json
   10. classification_analyzer   → state/classification-index.json
   11. dependency_graph_extractor→ state/dependency-graph.json
@@ -315,6 +316,32 @@ def _cache_write(out_dir: Path, data: dict) -> None:
     os.replace(tmp, target)
 
 
+def snapshot_baseline(jacoco_xml: Path, out_dir: Path, *, force: bool = False) -> Path | None:
+    """Snapshot the pre-generation JaCoCo report as state/jacoco-baseline.xml (M4).
+
+    This is the canonical ``--before`` image for per-cycle delta computation
+    (``jacoco_parser.py --mode delta --before state/jacoco-baseline.xml``).
+    The report passed to ``--jacoco-xml`` reflects coverage with the EXISTING
+    tests only — i.e. exactly the "before this session" baseline — so it is
+    copied verbatim.
+
+    Write-if-absent by default: re-running the pre-stage (e.g. with ``--since``)
+    must NOT move the baseline forward once tests have been generated, or every
+    later delta would shrink. Delete the file (or pass ``force=True``) to
+    recapture. Returns the baseline path when written, else None.
+    """
+    if not jacoco_xml.exists():
+        return None
+    baseline = out_dir / "jacoco-baseline.xml"
+    if baseline.exists() and not force:
+        return None
+    baseline.parent.mkdir(parents=True, exist_ok=True)
+    tmp = baseline.with_suffix(".xml.tmp")
+    tmp.write_bytes(jacoco_xml.read_bytes())
+    os.replace(tmp, baseline)
+    return baseline
+
+
 def run_step(args: list[str]) -> int:
     print(f"\n$ python {' '.join(str(a) for a in args)}")
     return subprocess.call([sys.executable, *[str(a) for a in args]])
@@ -584,6 +611,13 @@ def main() -> int:
             "--out", str(Path(args.out) / "coverage-targets.json"),
             "--coverage-mode", args.coverage_mode,
         ])
+        # M4: snapshot the same pre-generation report as the delta baseline so
+        # the per-cycle loop can ALWAYS compute coverage-delta.json. Without a
+        # baseline the delta is never produced and the loop cannot tell progress
+        # from a stall (the missing-baseline no-op that M3 now preserves).
+        b = snapshot_baseline(Path(args.jacoco_xml), Path(args.out))
+        if b is not None:
+            print(f"[OK] {b}  (delta baseline for jacoco_parser --mode delta --before)")
 
     # ── Step 9 [Phase 1]: Semantic index writer ───────────────────────────────
     if "index" not in skip:

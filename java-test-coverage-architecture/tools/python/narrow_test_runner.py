@@ -171,6 +171,13 @@ def main() -> int:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                # M4: decode Maven's stdout as UTF-8 (Maven prints UTF-8, e.g.
+                # emoji/box-drawing). Without this, text=True falls back to the
+                # Windows locale codec (cp1252) and raises UnicodeDecodeError mid
+                # build, killing the cycle. errors="replace" never crashes on a
+                # stray byte.
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
             )
             assert proc.stdout is not None
