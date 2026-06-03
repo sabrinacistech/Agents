@@ -122,6 +122,29 @@ def case_prune_removes_unused_keeps_used_and_wildcard() -> None:
         raise AssertionError("wildcard import must always be kept")
 
 
+def case_prune_ignores_comment_and_string_usage() -> None:
+    # The BDD AAA marker `// when` must NOT keep the Mockito `when` import, and a
+    # symbol named only inside a string literal is not a real use either.
+    text = (
+        "package com.acme;\n\n"
+        "import static org.mockito.Mockito.when;\n"
+        "import static org.assertj.core.api.Assertions.assertThat;\n\n"
+        "class FooTest {\n"
+        "    @Test\n"
+        "    void shouldX() {\n"
+        "        // when\n"
+        '        String msg = "call when() later";\n'
+        "        assertThat(msg).isNotNull();\n"
+        "    }\n"
+        "}\n"
+    )
+    pruned = _prune_unused_imports(text)
+    if "Mockito.when" in pruned:
+        raise AssertionError("`// when` comment / string must NOT keep the unused 'when' import")
+    if "Assertions.assertThat" not in pruned:
+        raise AssertionError("genuinely used 'assertThat' must be kept")
+
+
 # ── M2b: conditional Mockito scaffolding ──────────────────────────────────────
 
 def _render(patch: dict) -> str:
@@ -202,6 +225,7 @@ def main() -> int:
         ("planner-drops-generated-targets",        case_planner_drops_generated_targets),
         ("planner-keeps-without-classification",    case_planner_keeps_targets_without_classification),
         ("prune-unused-keeps-used-and-wildcard",    case_prune_removes_unused_keeps_used_and_wildcard),
+        ("prune-ignores-comment-and-string-usage",  case_prune_ignores_comment_and_string_usage),
         ("getter-keeps-scaffold-prunes-extras",     case_getter_keeps_scaffold_prunes_extras),
         ("static-util-drops-scaffold",              case_static_util_drops_scaffold),
         ("service-with-mocks-keeps-scaffold",       case_service_with_mocks_keeps_scaffold),

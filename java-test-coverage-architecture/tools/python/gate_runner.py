@@ -10,8 +10,12 @@ Implements the following gates today:
                            cited id must exist in some state/symbol-contracts/
                            <fqcn>.json (constructors/methods/builders). A method
                            without evidence, or citing an unknown id, FAILs.
-  G5 (STACK_PROFILE)     — context-pack stack must contain no "unknown" values
-                           and `blocked` must not be true.
+  G5 (STACK_PROFILE)     — context-pack stack must declare known *frameworks*
+                           (test/mock/assert), namespace and java, and `blocked`
+                           must not be true. Framework *versions* are exempt: an
+                           unknown version (e.g. junit/mockito managed by the
+                           Spring Boot BOM with no explicit <version>) does NOT
+                           block generation.
   G6 (TEST_LINT)         — when --test-file is supplied, invoke test_linter.py.
   G7 (FAILURE_MEMORY)    — when the patch is a repair (patchId starts with
                            `repair:` or repairs[] / --repair-attempt is given),
@@ -116,18 +120,39 @@ def _context_pack_imports(pack: dict) -> list[str]:
     return []
 
 
+# G5 only blocks on an unknown *framework* (or namespace/java) — never on an
+# unknown framework *version*. A version is metadata: junit/mockito/assertj are
+# API-stable across minor releases, so "version unknown" (common when the deps
+# are managed transitively by the Spring Boot BOM and carry no explicit
+# <version>) must NOT stop generation. These fields are therefore exempted from
+# the unknown-value check.
+#   verbose `stack` dict keys produced by context_pack_builder.extract_stack:
+_STACK_VERSION_KEYS: frozenset[str] = frozenset({
+    "testVersion", "mockVersion", "springBootVersion", "assertVersion", "hamcrestVersion",
+})
+#   compact `stk` positional layout (context_pack_builder._compact_stack):
+#   [0 java, 1 testFw, 2 mockFw, 3 assertFw, 4 springEnabled, 5 namespaceStyle,
+#    6 testVersion, 7 mockVersion, 8 springBootVersion]
+_STACK_COMPACT_VERSION_INDICES: frozenset[int] = frozenset({6, 7, 8})
+
+
 def _context_pack_stack(pack: dict) -> tuple[list[str], bool]:
-    """Return (stack_value_strings, blocked_flag)."""
+    """Return (stack_value_strings, blocked_flag).
+
+    Version fields are excluded from the returned values so gate_g5 only flags an
+    unknown *framework* (test/mock/assert), namespace or java — not an unknown
+    framework version (see _STACK_VERSION_KEYS / _STACK_COMPACT_VERSION_INDICES).
+    """
     blocked = bool(pack.get("blocked", False) or pack.get("blk", False))
     stack_values: list[str] = []
     if isinstance(pack.get("stack"), dict):
-        for v in pack["stack"].values():
-            if v is None:
+        for k, v in pack["stack"].items():
+            if v is None or k in _STACK_VERSION_KEYS:
                 continue
             stack_values.append(str(v))
     elif isinstance(pack.get("stk"), list):
-        for v in pack["stk"]:
-            if v is None:
+        for i, v in enumerate(pack["stk"]):
+            if v is None or i in _STACK_COMPACT_VERSION_INDICES:
                 continue
             stack_values.append(str(v))
     return stack_values, blocked

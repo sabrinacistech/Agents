@@ -167,6 +167,15 @@ def _step_input_signature(step: str, args, out_dir: Path) -> list[str] | None:
                 parts.append(f"{p}:{_sha256_file(p)}")
             except OSError:
                 return None
+        # cp.txt feeds framework-version resolution (stack_profile_detector);
+        # include it so a classpath change re-runs the detector even when no
+        # pom.xml changed.
+        try:
+            for cp in sorted(repo.rglob("cp.txt")):
+                if cp.parent.name == "target":
+                    parts.append(f"{cp}:{_file_stamp(cp)}")
+        except OSError:
+            pass
         return parts
     if step == "bytecode":
         # bytecode_scanner consumes target/classes/**/*.class of the active

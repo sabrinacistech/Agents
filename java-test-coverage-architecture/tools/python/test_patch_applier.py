@@ -476,6 +476,20 @@ _IMPORT_CAPTURE_RE = re.compile(
 )
 
 
+def _strip_comments_and_strings(java: str) -> str:
+    """Blank out comments and string/char literals so they don't count as symbol
+    usage. A symbol named only in a comment (e.g. the BDD ``// when`` AAA marker)
+    or inside a string literal is NEVER a real use of an imported symbol — counting
+    it would wrongly keep an unused import (e.g. ``org.mockito.Mockito.when``) and
+    re-introduce the SonarQube "Unused imports" violation M2 exists to prevent.
+    """
+    java = re.sub(r"/\*.*?\*/", " ", java, flags=re.DOTALL)   # block comments
+    java = re.sub(r"//[^\n]*", " ", java)                      # line comments
+    java = re.sub(r'"(?:\\.|[^"\\\n])*"', " ", java)           # string literals
+    java = re.sub(r"'(?:\\.|[^'\\\n])*'", " ", java)           # char literals
+    return java
+
+
 def _prune_unused_imports(text: str) -> str:
     """Remove import lines whose imported symbol is never referenced.
 
@@ -497,9 +511,11 @@ def _prune_unused_imports(text: str) -> str:
     if not matches:
         return text
 
-    # Usage scan target: the file with every import statement removed, so an
-    # import's own path can never count as a usage of itself.
-    usage_text = _IMPORT_CAPTURE_RE.sub("", text)
+    # Usage scan target: the file with every import statement removed (so an
+    # import's own path never counts as a usage of itself) AND with comments /
+    # string literals blanked (so a `// when` AAA marker never keeps the unused
+    # Mockito `when` import).
+    usage_text = _strip_comments_and_strings(_IMPORT_CAPTURE_RE.sub("", text))
 
     spans_to_drop: list[tuple[int, int]] = []
     for m in matches:
