@@ -592,6 +592,14 @@ def main() -> int:
                 "--state", args.out,
                 "--scope", "contracts",
             ])
+    elif "bytecode" not in skip:
+        # #2: make the auto-skip loud and actionable instead of silent.
+        print(
+            "[WARN] step 'bytecode' skipped: no --module given. "
+            "state/symbol-contracts/ will be empty, so G2 (symbol-evidence) has "
+            "nothing to verify against. Pass --module to scan target/classes.",
+            file=sys.stderr,
+        )
 
     # ── Step 7: Source symbol enricher ───────────────────────────────────────
     if "source" not in skip:
@@ -618,6 +626,15 @@ def main() -> int:
         b = snapshot_baseline(Path(args.jacoco_xml), Path(args.out))
         if b is not None:
             print(f"[OK] {b}  (delta baseline for jacoco_parser --mode delta --before)")
+    elif "jacoco" not in skip:
+        # #2: make the auto-skip loud and actionable instead of silent.
+        print(
+            "[WARN] step 'jacoco' skipped: no --jacoco-xml given. "
+            "state/coverage-targets.json will be empty, so the batch-plan is "
+            "empty and no targets reach the LLM. Generate a JaCoCo report "
+            "(mvn test jacoco:report) and pass --jacoco-xml.",
+            file=sys.stderr,
+        )
 
     # ── Step 9 [Phase 1]: Semantic index writer ───────────────────────────────
     if "index" not in skip:

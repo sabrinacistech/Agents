@@ -910,16 +910,29 @@ def main() -> int:
         print(f"[FAIL] Unexpected error: {exc}", file=sys.stderr)
         return 1
 
-    # ── G6 (static linter) post-write: lint what we rendered; roll back on FAIL ─
+    # ── G6 (static linter) post-write: lint what we rendered, AUTO-REPAIR via
+    #    deterministic rules, then roll back only if it still fails ─────────────
+    # M6 — reconnect repair_dispatch into the only code path that writes Java.
+    # It was built but never invoked from here (audit H-2), so a fixable lint
+    # violation went straight to a rollback instead of a deterministic repair.
+    # evaluate_gates(auto_repair=True) owns the repair flow (gate_g6 → repair_
+    # dispatch → re-lint); we reuse it rather than duplicating, and gate only on
+    # the post-write G6 result (G1/G2/G5/G7/G8 already passed pre-write).
     if not gates_disabled and not args.dry_run:
-        from gate_runner import gate_g6  # local import (same dir)
+        from gate_runner import evaluate_gates as _post_eval  # local import (same dir)
 
         written = Path(result["file"])
-        g6 = gate_g6(
+        post = _post_eval(
+            patch,
+            context_pack or {},
             state_dir,
-            written,
-            Path(args.context_pack).resolve() if args.context_pack else None,
+            test_file=written,
+            auto_repair=True,
+            context_pack_path=(
+                Path(args.context_pack).resolve() if args.context_pack else None
+            ),
         )
+        g6 = post.get("gates", {}).get("G6", {})
         if g6.get("status") == "FAIL":
             try:
                 if prior_text is None:
@@ -930,9 +943,12 @@ def main() -> int:
                     rb_tmp.replace(written)
             except OSError as exc:
                 print(f"[WARN] G6 rollback failed: {exc}", file=sys.stderr)
+            ar = g6.get("autoRepair") or {}
             print(
                 f"[BLOCKED] gate G6_LINTER_FAIL "
-                f"(violations={g6.get('violationCount')}; write rolled back)",
+                f"(violations={g6.get('violationCount')}; "
+                f"autoRepair repaired={ar.get('repaired', 0)} "
+                f"escalated={ar.get('escalated', 0)}; write rolled back)",
                 file=sys.stderr,
             )
             return 3
